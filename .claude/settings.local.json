@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(test:*)",
+      "Bash(python:*)",
+      "Bash(timeout 15 python price_tracker_prod.py:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(timeout 5 python:*)",
+      "Bash(timeout 10 python:*)",
+      "Bash(timeout 8 python:*)",
+      "Bash(timeout 6 python:*)",
+      "Bash(curl -s -X POST \"https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search\" )"
+    ]
+  }
+}

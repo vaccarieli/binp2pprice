@@ -1,0 +1,27 @@
+{
+  "asset": "USDT",
+  "fiat": "VES",
+  "check_interval": 30,
+  "alert_threshold": 2.0,
+  "payment_methods": ["Pago Movil"],
+  "exclude_methods": ["Recarga Pines"],
+  "min_amount": 0,
+  
+  "email_enabled": false,
+  "email_smtp_host": "smtp.gmail.com",
+  "email_smtp_port": 587,
+  "email_from": "your_email@gmail.com",
+  "email_to": "alert_email@gmail.com",
+  "email_password": "your_app_password",
+  
+  "webhook_enabled": false,
+  "webhook_url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
+  
+  "max_retries": 3,
+  "request_timeout": 10,
+  "max_history": 1000,
+  "backoff_multiplier": 2.0,
+  
+  "log_file": "price_tracker.log",
+  "log_level": "INFO"
+}

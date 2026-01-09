@@ -1,0 +1,38 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+venv/
+env/
+
+# Config and logs
+config.json
+*.log
+*.log.*
+price_history_*.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Documentation
+*.md
+!README.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Deployment
+p2p-tracker.service
+docker-compose.yml
+Dockerfile
+.dockerignore
