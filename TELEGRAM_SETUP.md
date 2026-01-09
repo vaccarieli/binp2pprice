@@ -17,9 +17,11 @@ This guide will help you set up Telegram alerts for your Binance P2P Price Track
 ✅ **Smart Sudden Change Alerts**
 - Immediate alerts when price moves ±5% from baseline (customizable)
 - **Baseline resets after each alert** to prevent spam
+- **Previous alert deleted** before sending new one (keeps chat clean)
 - Extra warning emoji (⚡) for changes >7.5%
 - Separate threshold from regular alerts
 - BUY and SELL tracked independently
+- Phone notifications triggered (new message sent each time)
 
 ## Quick Setup (5 minutes)
 

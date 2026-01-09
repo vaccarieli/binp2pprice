@@ -227,7 +227,27 @@ class AlertManager:
         except Exception as e:
             self.logger.error(f"Failed to edit Telegram message: {e}")
             return False
-    
+
+    def delete_telegram(self, message_id: int) -> bool:
+        """Delete Telegram message"""
+        if not self.config.telegram_enabled or not message_id:
+            return False
+
+        try:
+            url = f"https://api.telegram.org/bot{self.config.telegram_bot_token}/deleteMessage"
+            payload = {
+                "chat_id": self.config.telegram_chat_id,
+                "message_id": message_id
+            }
+            response = requests.post(url, json=payload, timeout=5)
+            response.raise_for_status()
+            self.logger.debug(f"Telegram message deleted successfully (message_id: {message_id})")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to delete Telegram message: {e}")
+            return False
+
     def send_alert(self, alerts: List[str]):
         """Send alerts through all enabled channels (Email/Webhook only, NOT Telegram)"""
         if not alerts:
@@ -374,6 +394,7 @@ class PriceTracker:
 
         # Telegram tracking
         self.last_telegram_message_id = None  # For editing price update messages
+        self.last_alert_message_id = None  # For deleting previous alert messages
         self.telegram_buy_baseline = None  # Baseline for BUY price alerts
         self.telegram_sell_baseline = None  # Baseline for SELL price alerts
 
@@ -939,6 +960,11 @@ class PriceTracker:
 
         # Send alert if any sudden changes detected
         if sudden_changes:
+            # Delete previous alert message to keep chat clean
+            if self.last_alert_message_id:
+                self.alert_manager.delete_telegram(self.last_alert_message_id)
+                self.logger.debug(f"Deleted previous alert message (ID: {self.last_alert_message_id})")
+
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             msg = f"⚡ <b>SUDDEN PRICE CHANGE ALERT!</b>\n"
             msg += f"<b>{self.config.fiat}/{self.config.asset}</b>\n"
@@ -950,8 +976,11 @@ class PriceTracker:
                 msg += f"   Change: <b>{abs(change['change']):.2f}%</b>\n"
                 msg += f"   {change['old_price']:.2f} → {change['new_price']:.2f} {self.config.fiat}\n\n"
 
-            # Send as new message (not edit)
-            self.alert_manager.send_telegram(msg)
+            # Send as new message and store its ID
+            message_id = self.alert_manager.send_telegram(msg)
+            if message_id:
+                self.last_alert_message_id = message_id
+                self.logger.debug(f"Stored new alert message ID: {message_id}")
     
     def display_status(self, buy_price: Optional[float], sell_price: Optional[float], changes: Dict[str, dict]):
         """Display current status"""
