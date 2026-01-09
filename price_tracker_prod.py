@@ -54,6 +54,7 @@ class Config:
     telegram_chat_id: str = ""
     telegram_regular_updates: bool = True
     telegram_sudden_change_threshold: float = 5.0
+    telegram_language: str = "en"
 
     # Limits
     max_retries: int = 3
@@ -128,6 +129,59 @@ class Config:
                 raise ValueError("Telegram enabled but missing bot token or chat ID")
             if self.telegram_sudden_change_threshold < 0 or self.telegram_sudden_change_threshold > 100:
                 raise ValueError("telegram_sudden_change_threshold must be between 0 and 100")
+            if self.telegram_language not in ["en", "es"]:
+                raise ValueError("telegram_language must be 'en' (English) or 'es' (Spanish)")
+
+
+# Translation dictionary for Telegram messages
+TRANSLATIONS = {
+    "en": {
+        "price_update": "Binance P2P Price Update",
+        "bcv_official_rate": "BCV Official Rate",
+        "best_buy": "Best BUY",
+        "best_sell": "Best SELL",
+        "buy": "BUY",
+        "sell": "SELL",
+        "vs_bcv": "vs BCV",
+        "trader": "Trader",
+        "available": "Available",
+        "payment": "Payment",
+        "orders": "orders",
+        "spread": "Spread",
+        "price_changes": "Price Changes",
+        "no_offers": "No offers",
+        "alert_title": "SUDDEN PRICE CHANGE ALERT!",
+        "change": "Change",
+        "up": "UP",
+        "down": "DOWN",
+    },
+    "es": {
+        "price_update": "Actualización de Precios P2P Binance",
+        "bcv_official_rate": "Tasa Oficial BCV",
+        "best_buy": "Mejor COMPRA",
+        "best_sell": "Mejor VENTA",
+        "buy": "COMPRA",
+        "sell": "VENTA",
+        "vs_bcv": "vs BCV",
+        "trader": "Comerciante",
+        "available": "Disponible",
+        "payment": "Pago",
+        "orders": "órdenes",
+        "spread": "Diferencial",
+        "price_changes": "Cambios de Precio",
+        "no_offers": "Sin ofertas",
+        "alert_title": "¡ALERTA DE CAMBIO REPENTINO DE PRECIO!",
+        "change": "Cambio",
+        "up": "SUBIÓ",
+        "down": "BAJÓ",
+    }
+}
+
+
+def get_translation(config: Config, key: str) -> str:
+    """Get translated string based on configured language"""
+    lang = config.telegram_language
+    return TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key, key)
 
 
 class AlertManager:
@@ -203,6 +257,13 @@ class AlertManager:
 
         except Exception as e:
             self.logger.error(f"Failed to send Telegram message: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_detail = e.response.json()
+                    self.logger.error(f"Telegram API error details: {error_detail}")
+                except:
+                    self.logger.error(f"Telegram response text: {e.response.text if hasattr(e.response, 'text') else 'N/A'}")
+            self.logger.debug(f"Message that failed: {message[:500]}")
             return None
 
     def edit_telegram(self, message_id: int, message: str) -> bool:
@@ -226,6 +287,13 @@ class AlertManager:
 
         except Exception as e:
             self.logger.error(f"Failed to edit Telegram message: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_detail = e.response.json()
+                    self.logger.error(f"Telegram API error details: {error_detail}")
+                except:
+                    self.logger.error(f"Telegram response text: {e.response.text if hasattr(e.response, 'text') else 'N/A'}")
+            self.logger.debug(f"Message that failed: {message[:500]}")
             return False
 
     def delete_telegram(self, message_id: int) -> bool:
@@ -284,15 +352,29 @@ class AlertManager:
         if not self.config.telegram_enabled or not self.config.telegram_regular_updates:
             return None
 
+        # Get translations
+        t_price_update = get_translation(self.config, "price_update")
+        t_bcv_rate = get_translation(self.config, "bcv_official_rate")
+        t_best_buy = get_translation(self.config, "best_buy")
+        t_best_sell = get_translation(self.config, "best_sell")
+        t_vs_bcv = get_translation(self.config, "vs_bcv")
+        t_trader = get_translation(self.config, "trader")
+        t_available = get_translation(self.config, "available")
+        t_payment = get_translation(self.config, "payment")
+        t_orders = get_translation(self.config, "orders")
+        t_spread = get_translation(self.config, "spread")
+        t_price_changes = get_translation(self.config, "price_changes")
+        t_no_offers = get_translation(self.config, "no_offers")
+
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        msg = f"📊 <b>Binance P2P Price Update</b>\n"
+        msg = f"📊 <b>{t_price_update}</b>\n"
         msg += f"<b>{self.config.fiat}/{self.config.asset}</b>\n"
         msg += f"⏰ {timestamp}\n"
         msg += "─" * 30 + "\n\n"
 
         # Add BCV official rate at the top
         if bcv_rate:
-            msg += f"🏛️ <b>BCV Official Rate:</b> {bcv_rate:.2f} {self.config.fiat}\n\n"
+            msg += f"🏛️ <b>{t_bcv_rate}:</b> {bcv_rate:.2f} {self.config.fiat}\n\n"
 
         # BUY offer details
         if buy_price is not None and best_buy_offer:
@@ -307,20 +389,20 @@ class AlertManager:
                 if m.get("tradeMethodName")
             ])
 
-            msg += f"💵 <b>Best BUY:</b> {buy_price:.2f} {self.config.fiat}"
+            msg += f"💵 <b>{t_best_buy}:</b> {buy_price:.2f} {self.config.fiat}"
 
             # Add BCV difference for BUY price
             if bcv_rate and bcv_rate > 0:
                 buy_diff = ((buy_price - bcv_rate) / bcv_rate) * 100
                 emoji = "📈" if buy_diff > 0 else "📉"
-                msg += f" {emoji} <b>{buy_diff:+.1f}%</b> vs BCV"
+                msg += f" {emoji} <b>{buy_diff:+.1f}%</b> {t_vs_bcv}"
 
             msg += "\n"
-            msg += f"   Trader: {buy_trader} ({buy_orders} orders)\n"
-            msg += f"   Available: {buy_available:.2f} USDT\n"
-            msg += f"   Payment: {buy_methods}\n\n"
+            msg += f"   {t_trader}: {buy_trader} ({buy_orders} {t_orders})\n"
+            msg += f"   {t_available}: {buy_available:.2f} USDT\n"
+            msg += f"   {t_payment}: {buy_methods}\n\n"
         else:
-            msg += f"💵 <b>Best BUY:</b> No offers\n\n"
+            msg += f"💵 <b>{t_best_buy}:</b> {t_no_offers}\n\n"
 
         # SELL offer details
         if sell_price is not None and best_sell_offer:
@@ -335,38 +417,38 @@ class AlertManager:
                 if m.get("tradeMethodName")
             ])
 
-            msg += f"💰 <b>Best SELL:</b> {sell_price:.2f} {self.config.fiat}"
+            msg += f"💰 <b>{t_best_sell}:</b> {sell_price:.2f} {self.config.fiat}"
 
             # Add BCV difference for SELL price
             if bcv_rate and bcv_rate > 0:
                 sell_diff = ((sell_price - bcv_rate) / bcv_rate) * 100
                 emoji = "📈" if sell_diff > 0 else "📉"
-                msg += f" {emoji} <b>{sell_diff:+.1f}%</b> vs BCV"
+                msg += f" {emoji} <b>{sell_diff:+.1f}%</b> {t_vs_bcv}"
 
             msg += "\n"
-            msg += f"   Trader: {sell_trader} ({sell_orders} orders)\n"
-            msg += f"   Available: {sell_available:.2f} USDT\n"
-            msg += f"   Payment: {sell_methods}\n\n"
+            msg += f"   {t_trader}: {sell_trader} ({sell_orders} {t_orders})\n"
+            msg += f"   {t_available}: {sell_available:.2f} USDT\n"
+            msg += f"   {t_payment}: {sell_methods}\n\n"
         else:
-            msg += f"💰 <b>Best SELL:</b> No offers\n\n"
+            msg += f"💰 <b>{t_best_sell}:</b> {t_no_offers}\n\n"
 
         # Spread
         if buy_price is not None and sell_price is not None:
             spread = buy_price - sell_price
             spread_pct = ((buy_price/sell_price - 1) * 100)
-            msg += f"📈 <b>Spread:</b> {spread:.2f} {self.config.fiat} ({spread_pct:.2f}%)\n\n"
+            msg += f"📈 <b>{t_spread}:</b> {spread:.2f} {self.config.fiat} ({spread_pct:.2f}%)\n\n"
 
         # Price changes
         if changes:
-            msg += "<b>Price Changes:</b>\n"
+            msg += f"<b>{t_price_changes}:</b>\n"
             for period in ["15m", "30m", "1h"]:
                 if period in changes:
                     data = changes[period]
                     buy_emoji = "📈" if data['buy_change'] > 0 else "📉"
                     sell_emoji = "📈" if data['sell_change'] > 0 else "📉"
                     msg += f"\n{period}:\n"
-                    msg += f"  {buy_emoji} BUY: {data['buy_change']:+.2f}%\n"
-                    msg += f"  {sell_emoji} SELL: {data['sell_change']:+.2f}%\n"
+                    msg += f"  {buy_emoji} {t_best_buy}: {data['buy_change']:+.2f}%\n"
+                    msg += f"  {sell_emoji} {t_best_sell}: {data['sell_change']:+.2f}%\n"
 
         # Edit existing message or send new one
         if last_message_id:
@@ -906,6 +988,14 @@ class PriceTracker:
         if not self.config.telegram_enabled:
             return
 
+        # Get translations
+        t_alert_title = get_translation(self.config, "alert_title")
+        t_change = get_translation(self.config, "change")
+        t_up = get_translation(self.config, "up")
+        t_down = get_translation(self.config, "down")
+        t_buy = get_translation(self.config, "buy")
+        t_sell = get_translation(self.config, "sell")
+
         threshold = self.config.telegram_sudden_change_threshold
         sudden_changes = []
 
@@ -924,7 +1014,7 @@ class PriceTracker:
             self.logger.debug(f"BUY: {current_buy:.2f} vs baseline {self.telegram_buy_baseline:.2f} = {buy_change:+.2f}% (threshold: {threshold}%)")
 
             if abs(buy_change) >= threshold:
-                direction = "📈 UP" if buy_change > 0 else "📉 DOWN"
+                direction = f"📈 {t_up}" if buy_change > 0 else f"📉 {t_down}"
                 emoji = "⚡" if abs(buy_change) >= threshold * 1.5 else "⚠️"
                 sudden_changes.append({
                     'type': 'BUY',
@@ -944,7 +1034,7 @@ class PriceTracker:
             self.logger.debug(f"SELL: {current_sell:.2f} vs baseline {self.telegram_sell_baseline:.2f} = {sell_change:+.2f}% (threshold: {threshold}%)")
 
             if abs(sell_change) >= threshold:
-                direction = "📈 UP" if sell_change > 0 else "📉 DOWN"
+                direction = f"📈 {t_up}" if sell_change > 0 else f"📉 {t_down}"
                 emoji = "⚡" if abs(sell_change) >= threshold * 1.5 else "⚠️"
                 sudden_changes.append({
                     'type': 'SELL',
@@ -966,14 +1056,16 @@ class PriceTracker:
                 self.logger.debug(f"Deleted previous alert message (ID: {self.last_alert_message_id})")
 
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            msg = f"⚡ <b>SUDDEN PRICE CHANGE ALERT!</b>\n"
+            msg = f"⚡ <b>{t_alert_title}</b>\n"
             msg += f"<b>{self.config.fiat}/{self.config.asset}</b>\n"
             msg += f"⏰ {timestamp}\n"
             msg += "─" * 30 + "\n\n"
 
             for change in sudden_changes:
-                msg += f"{change['emoji']} <b>{change['type']}</b> {change['direction']}\n"
-                msg += f"   Change: <b>{abs(change['change']):.2f}%</b>\n"
+                # Translate BUY/SELL type
+                translated_type = t_buy if change['type'] == 'BUY' else t_sell
+                msg += f"{change['emoji']} <b>{translated_type}</b> {change['direction']}\n"
+                msg += f"   {t_change}: <b>{abs(change['change']):.2f}%</b>\n"
                 msg += f"   {change['old_price']:.2f} → {change['new_price']:.2f} {self.config.fiat}\n\n"
 
             # Send as new message and store its ID
