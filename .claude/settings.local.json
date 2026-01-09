@@ -10,7 +10,10 @@
       "Bash(timeout 10 python:*)",
       "Bash(timeout 8 python:*)",
       "Bash(timeout 6 python:*)",
-      "Bash(curl -s -X POST \"https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search\" )"
+      "Bash(curl -s -X POST \"https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search\" )",
+      "Bash(chmod:*)",
+      "Bash(python3:*)",
+      "Bash(curl:*)"
     ]
   }
 }

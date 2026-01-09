@@ -47,7 +47,14 @@ class Config:
     
     webhook_enabled: bool = False
     webhook_url: str = ""
-    
+
+    # Telegram alerting
+    telegram_enabled: bool = False
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    telegram_regular_updates: bool = True
+    telegram_sudden_change_threshold: float = 5.0
+
     # Limits
     max_retries: int = 3
     request_timeout: int = 10
@@ -115,6 +122,13 @@ class Config:
             if not email_pattern.match(self.email_to):
                 raise ValueError(f"Invalid email_to address: {self.email_to}")
 
+        # Validate Telegram configuration
+        if self.telegram_enabled:
+            if not self.telegram_bot_token or not self.telegram_chat_id:
+                raise ValueError("Telegram enabled but missing bot token or chat ID")
+            if self.telegram_sudden_change_threshold < 0 or self.telegram_sudden_change_threshold > 100:
+                raise ValueError("telegram_sudden_change_threshold must be between 0 and 100")
+
 
 class AlertManager:
     """Handles different alert mechanisms"""
@@ -152,7 +166,7 @@ class AlertManager:
         """Send webhook alert (Slack/Discord/etc)"""
         if not self.config.webhook_enabled:
             return False
-        
+
         try:
             response = requests.post(
                 self.config.webhook_url,
@@ -162,28 +176,75 @@ class AlertManager:
             response.raise_for_status()
             self.logger.info("Webhook alert sent successfully")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Failed to send webhook: {e}")
             return False
+
+    def send_telegram(self, message: str) -> Optional[int]:
+        """Send Telegram message and return message_id"""
+        if not self.config.telegram_enabled:
+            return None
+
+        try:
+            url = f"https://api.telegram.org/bot{self.config.telegram_bot_token}/sendMessage"
+            payload = {
+                "chat_id": self.config.telegram_chat_id,
+                "text": message,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True
+            }
+            response = requests.post(url, json=payload, timeout=5)
+            response.raise_for_status()
+            result = response.json()
+            message_id = result.get("result", {}).get("message_id")
+            self.logger.info(f"Telegram message sent successfully (message_id: {message_id})")
+            return message_id
+
+        except Exception as e:
+            self.logger.error(f"Failed to send Telegram message: {e}")
+            return None
+
+    def edit_telegram(self, message_id: int, message: str) -> bool:
+        """Edit existing Telegram message"""
+        if not self.config.telegram_enabled or not message_id:
+            return False
+
+        try:
+            url = f"https://api.telegram.org/bot{self.config.telegram_bot_token}/editMessageText"
+            payload = {
+                "chat_id": self.config.telegram_chat_id,
+                "message_id": message_id,
+                "text": message,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True
+            }
+            response = requests.post(url, json=payload, timeout=5)
+            response.raise_for_status()
+            self.logger.debug(f"Telegram message edited successfully (message_id: {message_id})")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to edit Telegram message: {e}")
+            return False
     
     def send_alert(self, alerts: List[str]):
-        """Send alerts through all enabled channels"""
+        """Send alerts through all enabled channels (Email/Webhook only, NOT Telegram)"""
         if not alerts:
             return
-        
+
         alert_text = "\n".join(alerts)
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        
+
         # Console
         self.logger.warning(f"ALERTS at {timestamp}:\n{alert_text}")
-        
+
         # Email
         if self.config.email_enabled:
             subject = f"Binance P2P Alert - {self.config.fiat}/{self.config.asset}"
             body = f"Alert triggered at {timestamp}\n\n{alert_text}"
             self.send_email(subject, body)
-        
+
         # Webhook
         if self.config.webhook_enabled:
             webhook_data = {
@@ -192,6 +253,107 @@ class AlertManager:
                 "alerts": alerts
             }
             self.send_webhook(webhook_data)
+
+        # NOTE: Telegram alerts are handled separately by check_sudden_change_telegram()
+        # which uses baseline reset logic to prevent spam
+
+    def send_regular_update(self, buy_price: Optional[float], sell_price: Optional[float],
+                           changes: Dict[str, dict], best_buy_offer, best_sell_offer,
+                           last_message_id: Optional[int] = None, bcv_rate: Optional[float] = None) -> Optional[int]:
+        """Send or edit regular status update via Telegram, returns message_id"""
+        if not self.config.telegram_enabled or not self.config.telegram_regular_updates:
+            return None
+
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        msg = f"📊 <b>Binance P2P Price Update</b>\n"
+        msg += f"<b>{self.config.fiat}/{self.config.asset}</b>\n"
+        msg += f"⏰ {timestamp}\n"
+        msg += "─" * 30 + "\n\n"
+
+        # Add BCV official rate at the top
+        if bcv_rate:
+            msg += f"🏛️ <b>BCV Official Rate:</b> {bcv_rate:.2f} {self.config.fiat}\n\n"
+
+        # BUY offer details
+        if buy_price is not None and best_buy_offer:
+            buy_adv = best_buy_offer.get("adv", {})
+            buy_advertiser = best_buy_offer.get("advertiser", {})
+            buy_trader = buy_advertiser.get("nickName", "Unknown")
+            buy_orders = buy_advertiser.get("monthOrderCount", 0)
+            buy_available = float(buy_adv.get("surplusAmount", 0))
+            buy_methods = ", ".join([
+                m.get("tradeMethodName", "")
+                for m in buy_adv.get("tradeMethods", [])[:2]  # Limit to first 2
+                if m.get("tradeMethodName")
+            ])
+
+            msg += f"💵 <b>Best BUY:</b> {buy_price:.2f} {self.config.fiat}"
+
+            # Add BCV difference for BUY price
+            if bcv_rate and bcv_rate > 0:
+                buy_diff = ((buy_price - bcv_rate) / bcv_rate) * 100
+                emoji = "📈" if buy_diff > 0 else "📉"
+                msg += f" {emoji} <b>{buy_diff:+.1f}%</b> vs BCV"
+
+            msg += "\n"
+            msg += f"   Trader: {buy_trader} ({buy_orders} orders)\n"
+            msg += f"   Available: {buy_available:.2f} USDT\n"
+            msg += f"   Payment: {buy_methods}\n\n"
+        else:
+            msg += f"💵 <b>Best BUY:</b> No offers\n\n"
+
+        # SELL offer details
+        if sell_price is not None and best_sell_offer:
+            sell_adv = best_sell_offer.get("adv", {})
+            sell_advertiser = best_sell_offer.get("advertiser", {})
+            sell_trader = sell_advertiser.get("nickName", "Unknown")
+            sell_orders = sell_advertiser.get("monthOrderCount", 0)
+            sell_available = float(sell_adv.get("surplusAmount", 0))
+            sell_methods = ", ".join([
+                m.get("tradeMethodName", "")
+                for m in sell_adv.get("tradeMethods", [])[:2]  # Limit to first 2
+                if m.get("tradeMethodName")
+            ])
+
+            msg += f"💰 <b>Best SELL:</b> {sell_price:.2f} {self.config.fiat}"
+
+            # Add BCV difference for SELL price
+            if bcv_rate and bcv_rate > 0:
+                sell_diff = ((sell_price - bcv_rate) / bcv_rate) * 100
+                emoji = "📈" if sell_diff > 0 else "📉"
+                msg += f" {emoji} <b>{sell_diff:+.1f}%</b> vs BCV"
+
+            msg += "\n"
+            msg += f"   Trader: {sell_trader} ({sell_orders} orders)\n"
+            msg += f"   Available: {sell_available:.2f} USDT\n"
+            msg += f"   Payment: {sell_methods}\n\n"
+        else:
+            msg += f"💰 <b>Best SELL:</b> No offers\n\n"
+
+        # Spread
+        if buy_price is not None and sell_price is not None:
+            spread = buy_price - sell_price
+            spread_pct = ((buy_price/sell_price - 1) * 100)
+            msg += f"📈 <b>Spread:</b> {spread:.2f} {self.config.fiat} ({spread_pct:.2f}%)\n\n"
+
+        # Price changes
+        if changes:
+            msg += "<b>Price Changes:</b>\n"
+            for period in ["15m", "30m", "1h"]:
+                if period in changes:
+                    data = changes[period]
+                    buy_emoji = "📈" if data['buy_change'] > 0 else "📉"
+                    sell_emoji = "📈" if data['sell_change'] > 0 else "📉"
+                    msg += f"\n{period}:\n"
+                    msg += f"  {buy_emoji} BUY: {data['buy_change']:+.2f}%\n"
+                    msg += f"  {sell_emoji} SELL: {data['sell_change']:+.2f}%\n"
+
+        # Edit existing message or send new one
+        if last_message_id:
+            success = self.edit_telegram(last_message_id, msg)
+            return last_message_id if success else None
+        else:
+            return self.send_telegram(msg)
 
 
 class PriceTracker:
@@ -209,6 +371,16 @@ class PriceTracker:
         self.backoff_time = 0
         self.best_buy_offer = None  # Store best buy offer details
         self.best_sell_offer = None  # Store best sell offer details
+
+        # Telegram tracking
+        self.last_telegram_message_id = None  # For editing price update messages
+        self.telegram_buy_baseline = None  # Baseline for BUY price alerts
+        self.telegram_sell_baseline = None  # Baseline for SELL price alerts
+
+        # BCV rate caching
+        self.bcv_rate = None  # Current BCV rate
+        self.bcv_rate_timestamp = None  # When BCV rate was last fetched
+        self.bcv_rate_cache_duration = 3600  # Cache for 1 hour
 
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -249,7 +421,64 @@ class PriceTracker:
         
         self.logger.warning(f"Rate limit hit. Backing off for {wait_time} seconds")
         time.sleep(wait_time)
-    
+
+    def get_bcv_rate(self) -> Optional[float]:
+        """
+        Fetch current BCV (Banco Central de Venezuela) official exchange rate.
+        Caches the rate for 1 hour to avoid excessive API calls.
+        Tries multiple API endpoints as fallbacks.
+        """
+        # Check cache first
+        if self.bcv_rate and self.bcv_rate_timestamp:
+            elapsed = (datetime.now() - self.bcv_rate_timestamp).total_seconds()
+            if elapsed < self.bcv_rate_cache_duration:
+                self.logger.debug(f"Using cached BCV rate: {self.bcv_rate:.2f} (age: {elapsed:.0f}s)")
+                return self.bcv_rate
+
+        # Try multiple API endpoints
+        endpoints = [
+            {
+                "url": "https://ve.dolarapi.com/v1/dolares/oficial",
+                "parser": lambda d: float(d.get("promedio", 0))
+            },
+            {
+                "url": "https://pydolarve.org/api/v1/dollar?monitor=bcv",
+                "parser": lambda d: float(d["monitors"]["bcv"]["price"]) if "monitors" in d else 0
+            },
+            {
+                "url": "https://s3.amazonaws.com/dolartoday/data.json",
+                "parser": lambda d: float(d["USD"]["promedio_real"]) if "USD" in d and "promedio_real" in d["USD"] else 0
+            }
+        ]
+
+        for endpoint in endpoints:
+            try:
+                self.logger.debug(f"Fetching BCV rate from: {endpoint['url']}")
+                response = self.session.get(endpoint['url'], timeout=5)
+                response.raise_for_status()
+                data = response.json()
+
+                # Parse response using endpoint-specific parser
+                rate = endpoint['parser'](data)
+
+                if rate and rate > 0:
+                    self.bcv_rate = rate
+                    self.bcv_rate_timestamp = datetime.now()
+                    self.logger.info(f"BCV rate updated: {rate:.2f} VES (source: {endpoint['url']})")
+                    return rate
+
+            except Exception as e:
+                self.logger.debug(f"Failed to fetch BCV from {endpoint['url']}: {e}")
+                continue
+
+        # If all endpoints fail, keep using cached rate if available
+        if self.bcv_rate:
+            self.logger.warning("Failed to fetch new BCV rate, using cached value")
+            return self.bcv_rate
+
+        self.logger.error("Failed to fetch BCV rate from all endpoints")
+        return None
+
     def get_p2p_offers(self, trade_type: str) -> Optional[dict]:
         """
         Fetch P2P offers with error handling and rate limit respect
@@ -630,7 +859,7 @@ class PriceTracker:
     def check_alert(self, changes: Dict[str, dict], threshold: float) -> List[str]:
         """Check if any changes exceed threshold"""
         alerts = []
-        
+
         for period, data in changes.items():
             if abs(data['buy_change']) >= threshold:
                 direction = "UP" if data['buy_change'] > 0 else "DOWN"
@@ -638,15 +867,91 @@ class PriceTracker:
                     f"BUY price {direction} {abs(data['buy_change']):.2f}% in {period} "
                     f"({data['buy_old']:.2f} -> {data['buy_old'] * (1 + data['buy_change']/100):.2f})"
                 )
-            
+
             if abs(data['sell_change']) >= threshold:
                 direction = "UP" if data['sell_change'] > 0 else "DOWN"
                 alerts.append(
                     f"SELL price {direction} {abs(data['sell_change']):.2f}% in {period} "
                     f"({data['sell_old']:.2f} -> {data['sell_old'] * (1 + data['sell_change']/100):.2f})"
                 )
-        
+
         return alerts
+
+    def check_sudden_change_telegram(self, current_buy: float, current_sell: float):
+        """
+        Check for sudden price changes against baseline and send Telegram alert.
+        Resets baseline after alert to prevent spam.
+        """
+        if not self.config.telegram_enabled:
+            return
+
+        threshold = self.config.telegram_sudden_change_threshold
+        sudden_changes = []
+
+        # Initialize baselines if not set
+        if self.telegram_buy_baseline is None:
+            self.telegram_buy_baseline = current_buy
+            self.logger.info(f"Initialized BUY baseline: {current_buy:.2f} {self.config.fiat}")
+
+        if self.telegram_sell_baseline is None:
+            self.telegram_sell_baseline = current_sell
+            self.logger.info(f"Initialized SELL baseline: {current_sell:.2f} {self.config.fiat}")
+
+        # Check BUY price change from baseline
+        if self.telegram_buy_baseline and current_buy:
+            buy_change = ((current_buy - self.telegram_buy_baseline) / self.telegram_buy_baseline) * 100
+            self.logger.debug(f"BUY: {current_buy:.2f} vs baseline {self.telegram_buy_baseline:.2f} = {buy_change:+.2f}% (threshold: {threshold}%)")
+
+            if abs(buy_change) >= threshold:
+                direction = "📈 UP" if buy_change > 0 else "📉 DOWN"
+                emoji = "⚡" if abs(buy_change) >= threshold * 1.5 else "⚠️"
+                sudden_changes.append({
+                    'type': 'BUY',
+                    'direction': direction,
+                    'change': buy_change,
+                    'old_price': self.telegram_buy_baseline,
+                    'new_price': current_buy,
+                    'emoji': emoji
+                })
+                # Reset baseline immediately after detecting change
+                self.logger.info(f"BUY alert triggered: {buy_change:+.2f}% change. Resetting baseline from {self.telegram_buy_baseline:.2f} to {current_buy:.2f}")
+                self.telegram_buy_baseline = current_buy
+
+        # Check SELL price change from baseline
+        if self.telegram_sell_baseline and current_sell:
+            sell_change = ((current_sell - self.telegram_sell_baseline) / self.telegram_sell_baseline) * 100
+            self.logger.debug(f"SELL: {current_sell:.2f} vs baseline {self.telegram_sell_baseline:.2f} = {sell_change:+.2f}% (threshold: {threshold}%)")
+
+            if abs(sell_change) >= threshold:
+                direction = "📈 UP" if sell_change > 0 else "📉 DOWN"
+                emoji = "⚡" if abs(sell_change) >= threshold * 1.5 else "⚠️"
+                sudden_changes.append({
+                    'type': 'SELL',
+                    'direction': direction,
+                    'change': sell_change,
+                    'old_price': self.telegram_sell_baseline,
+                    'new_price': current_sell,
+                    'emoji': emoji
+                })
+                # Reset baseline immediately after detecting change
+                self.logger.info(f"SELL alert triggered: {sell_change:+.2f}% change. Resetting baseline from {self.telegram_sell_baseline:.2f} to {current_sell:.2f}")
+                self.telegram_sell_baseline = current_sell
+
+        # Send alert if any sudden changes detected
+        if sudden_changes:
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            msg = f"⚡ <b>SUDDEN PRICE CHANGE ALERT!</b>\n"
+            msg += f"<b>{self.config.fiat}/{self.config.asset}</b>\n"
+            msg += f"⏰ {timestamp}\n"
+            msg += "─" * 30 + "\n\n"
+
+            for change in sudden_changes:
+                msg += f"{change['emoji']} <b>{change['type']}</b> {change['direction']}\n"
+                msg += f"   Change: <b>{abs(change['change']):.2f}%</b>\n"
+                msg += f"   {change['old_price']:.2f} → {change['new_price']:.2f} {self.config.fiat}\n\n"
+
+            # Send as new message (not edit)
+            self.alert_manager.send_telegram(msg)
     
     def display_status(self, buy_price: Optional[float], sell_price: Optional[float], changes: Dict[str, dict]):
         """Display current status"""
@@ -808,6 +1113,10 @@ class PriceTracker:
         
         self.logger.info("Email alerts: " + ("ENABLED" if self.config.email_enabled else "DISABLED"))
         self.logger.info("Webhook alerts: " + ("ENABLED" if self.config.webhook_enabled else "DISABLED"))
+        if self.config.telegram_enabled:
+            self.logger.info(f"Telegram alerts: ENABLED (regular: {self.config.telegram_regular_updates}, threshold: {self.config.telegram_sudden_change_threshold}%)")
+        else:
+            self.logger.info("Telegram alerts: DISABLED")
         self.logger.info("=" * 70)
         
         iteration = 0
@@ -833,6 +1142,22 @@ class PriceTracker:
                         alerts = self.check_alert(changes, self.config.alert_threshold)
                         if alerts:
                             self.alert_manager.send_alert(alerts)
+
+                        # Check for sudden price changes (Telegram) - uses baseline logic
+                        self.check_sudden_change_telegram(buy_price, sell_price)
+
+                        # Fetch BCV rate (cached for 1 hour)
+                        bcv_rate = self.get_bcv_rate()
+
+                        # Send regular Telegram update (edit existing message)
+                        message_id = self.alert_manager.send_regular_update(
+                            buy_price, sell_price, changes,
+                            self.best_buy_offer, self.best_sell_offer,
+                            self.last_telegram_message_id,
+                            bcv_rate
+                        )
+                        if message_id:
+                            self.last_telegram_message_id = message_id
                     else:
                         changes = {}
 

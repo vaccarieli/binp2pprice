@@ -14,6 +14,7 @@ A robust, enterprise-ready price monitoring system for Binance P2P cryptocurrenc
 - Console logging
 - Email (SMTP)
 - Webhooks (Slack/Discord/etc)
+- Telegram (with regular updates and sudden change alerts)
 
 ✅ **Production Monitoring**
 - Structured logging to file and console
@@ -84,6 +85,13 @@ Webhook Alerts:
   --webhook-enabled       Enable webhook
   --webhook-url           Webhook URL
 
+Telegram Alerts:
+  --telegram-enabled              Enable Telegram alerts
+  --telegram-bot-token            Bot token from BotFather
+  --telegram-chat-id              Your Telegram chat ID
+  --telegram-regular-updates      Send regular status updates (true/false)
+  --telegram-sudden-threshold     Percentage for sudden change alerts (default: 5.0)
+
 Logging:
   --log-file             Log file path (default: price_tracker.log)
   --log-level            DEBUG|INFO|WARNING|ERROR (default: INFO)
@@ -129,6 +137,50 @@ See `config.example.json` for all available options.
 ### Discord
 1. Server Settings → Integrations → Webhooks → New Webhook
 2. Copy URL and add to config
+
+## Telegram Setup
+
+### Quick Setup
+1. **Create a bot** with [@BotFather](https://t.me/BotFather):
+   - Send `/newbot` to BotFather
+   - Choose a name and username for your bot
+   - Save the bot token (e.g., `7413119427:AAECImETvOcwQEUTep776FXCdvYYIqukZ_s`)
+
+2. **Get your chat ID**:
+   ```bash
+   # Method 1: Using helper script
+   python get_telegram_chat_id.py
+   # Then send any message to your bot
+
+   # Method 2: Manual
+   # Send a message to your bot, then visit:
+   # https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates
+   # Look for "chat":{"id":123456789}
+   ```
+
+3. **Add to config.json**:
+   ```json
+   {
+     "telegram_enabled": true,
+     "telegram_bot_token": "7413119427:AAECImETvOcwQEUTep776FXCdvYYIqukZ_s",
+     "telegram_chat_id": "123456789",
+     "telegram_regular_updates": true,
+     "telegram_sudden_change_threshold": 5.0
+   }
+   ```
+
+### Telegram Features
+- **Regular Updates**: Status updates every 30 seconds (configurable via `telegram_regular_updates`)
+- **Sudden Change Alerts**: Immediate alerts when price moves ±5% (configurable via `telegram_sudden_change_threshold`)
+- **Rich Formatting**: Formatted messages with emojis for easy reading
+- **Separate Thresholds**: Different alert thresholds for general alerts vs sudden changes
+
+### Configuration Options
+- `telegram_enabled`: Enable/disable Telegram alerts (default: false)
+- `telegram_bot_token`: Your bot token from BotFather
+- `telegram_chat_id`: Your chat ID (get using helper script)
+- `telegram_regular_updates`: Send status updates every check interval (default: true)
+- `telegram_sudden_change_threshold`: Percentage change to trigger sudden alerts (default: 5.0)
 
 ## Rate Limits
 
