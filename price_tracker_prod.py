@@ -476,7 +476,8 @@ class PriceTracker:
 
         # Telegram tracking
         self.last_telegram_message_id = None  # For editing price update messages
-        self.last_alert_message_id = None  # For deleting previous alert messages
+        self.last_buy_alert_message_id = None  # For deleting previous BUY alert messages
+        self.last_sell_alert_message_id = None  # For deleting previous SELL alert messages
         self.telegram_buy_baseline = None  # Baseline for BUY price alerts
         self.telegram_sell_baseline = None  # Baseline for SELL price alerts
 
@@ -1048,31 +1049,59 @@ class PriceTracker:
                 self.logger.info(f"SELL alert triggered: {sell_change:+.2f}% change. Resetting baseline from {self.telegram_sell_baseline:.2f} to {current_sell:.2f}")
                 self.telegram_sell_baseline = current_sell
 
-        # Send alert if any sudden changes detected
+        # Send separate alerts for BUY and SELL changes
         if sudden_changes:
-            # Delete previous alert message to keep chat clean
-            if self.last_alert_message_id:
-                self.alert_manager.delete_telegram(self.last_alert_message_id)
-                self.logger.debug(f"Deleted previous alert message (ID: {self.last_alert_message_id})")
-
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            msg = f"⚡ <b>{t_alert_title}</b>\n"
-            msg += f"<b>{self.config.fiat}/{self.config.asset}</b>\n"
-            msg += f"⏰ {timestamp}\n"
-            msg += "─" * 30 + "\n\n"
 
-            for change in sudden_changes:
-                # Translate BUY/SELL type
-                translated_type = t_buy if change['type'] == 'BUY' else t_sell
-                msg += f"{change['emoji']} <b>{translated_type}</b> {change['direction']}\n"
-                msg += f"   {t_change}: <b>{abs(change['change']):.2f}%</b>\n"
-                msg += f"   {change['old_price']:.2f} → {change['new_price']:.2f} {self.config.fiat}\n\n"
+            # Group changes by type
+            buy_changes = [c for c in sudden_changes if c['type'] == 'BUY']
+            sell_changes = [c for c in sudden_changes if c['type'] == 'SELL']
 
-            # Send as new message and store its ID
-            message_id = self.alert_manager.send_telegram(msg)
-            if message_id:
-                self.last_alert_message_id = message_id
-                self.logger.debug(f"Stored new alert message ID: {message_id}")
+            # Send BUY alert if applicable
+            if buy_changes:
+                # Delete previous BUY alert message
+                if self.last_buy_alert_message_id:
+                    self.alert_manager.delete_telegram(self.last_buy_alert_message_id)
+                    self.logger.debug(f"Deleted previous BUY alert message (ID: {self.last_buy_alert_message_id})")
+
+                msg = f"⚡ <b>{t_alert_title}</b>\n"
+                msg += f"<b>{self.config.fiat}/{self.config.asset}</b>\n"
+                msg += f"⏰ {timestamp}\n"
+                msg += "─" * 30 + "\n\n"
+
+                for change in buy_changes:
+                    msg += f"{change['emoji']} <b>{t_buy}</b> {change['direction']}\n"
+                    msg += f"   {t_change}: <b>{abs(change['change']):.2f}%</b>\n"
+                    msg += f"   {change['old_price']:.2f} → {change['new_price']:.2f} {self.config.fiat}\n\n"
+
+                # Send as new message and store its ID
+                message_id = self.alert_manager.send_telegram(msg)
+                if message_id:
+                    self.last_buy_alert_message_id = message_id
+                    self.logger.debug(f"Stored new BUY alert message ID: {message_id}")
+
+            # Send SELL alert if applicable
+            if sell_changes:
+                # Delete previous SELL alert message
+                if self.last_sell_alert_message_id:
+                    self.alert_manager.delete_telegram(self.last_sell_alert_message_id)
+                    self.logger.debug(f"Deleted previous SELL alert message (ID: {self.last_sell_alert_message_id})")
+
+                msg = f"⚡ <b>{t_alert_title}</b>\n"
+                msg += f"<b>{self.config.fiat}/{self.config.asset}</b>\n"
+                msg += f"⏰ {timestamp}\n"
+                msg += "─" * 30 + "\n\n"
+
+                for change in sell_changes:
+                    msg += f"{change['emoji']} <b>{t_sell}</b> {change['direction']}\n"
+                    msg += f"   {t_change}: <b>{abs(change['change']):.2f}%</b>\n"
+                    msg += f"   {change['old_price']:.2f} → {change['new_price']:.2f} {self.config.fiat}\n\n"
+
+                # Send as new message and store its ID
+                message_id = self.alert_manager.send_telegram(msg)
+                if message_id:
+                    self.last_sell_alert_message_id = message_id
+                    self.logger.debug(f"Stored new SELL alert message ID: {message_id}")
     
     def display_status(self, buy_price: Optional[float], sell_price: Optional[float], changes: Dict[str, dict]):
         """Display current status"""
