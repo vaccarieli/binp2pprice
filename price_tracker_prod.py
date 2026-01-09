@@ -274,56 +274,33 @@ class PriceTracker:
         # DON'T use transAmount filter - it's too restrictive
         # Just filter by payment method and check amounts client-side
 
- # SELLL
         payload = {
-   "fiat":"VES",
-   "page":1,
-   "rows":10,
-   "tradeType":trade_type,
-   "asset":"USDT",
-   "countries":[
-      
-   ],
-   "proMerchantAds":False,
-   "shieldMerchantAds":False,
-   "filterType":"tradable",
-   "periods":[
-      
-   ],
-   "additionalKycVerifyFilter":0,
-   "publisherType":"merchant",
-   "payTypes":[
-      "PagoMovil"
-   ],
-   "classifies":[
-      "mass",
-      "profession",
-      "fiat_trade"
-   ],
-   "tradedWith":False,
-   "followed":False,
-   "transAmount":60000
-}
+    "fiat":self.config.fiat,
+    "page":1,
+    "rows":10,
+    "tradeType":trade_type,
+    "asset":self.config.asset,
+    "countries":[
+    ],
+    "proMerchantAds":False,
+    "shieldMerchantAds":False,
+    "filterType":"tradable",
+    "periods":[
+        
+    ],
+    "additionalKycVerifyFilter":0,
+    "publisherType":"merchant",
+    "payTypes":pay_types,
+    "classifies":[
+        "mass",
+        "profession",
+        "fiat_trade"
+    ],
+    "tradedWith":False,
+    "followed":False,
+    "transAmount":self.config.min_amount
+    }
     
-        # payload = {
-        #     "fiat": self.config.fiat,
-        #     "page": 1,
-        #     "rows": 10,
-        #     "tradeType": trade_type,
-        #     "asset": self.config.asset,
-        #     "countries": [],
-        #     "proMerchantAds": False,
-        #     "shieldMerchantAds": False,
-        #     "filterType": "tradable",
-        #     "periods": [],
-        #     "additionalKycVerifyFilter": 0,
-        #     "publisherType": None,
-        #     "payTypes": pay_types,
-        #     "classifies": ["mass", "profession", "fiat_trade"],
-        #     "tradedWith": False,
-        #     "followed": False,
-        #     "transAmount": self.config.min_amount
-        # }
 
         for attempt in range(self.config.max_retries):
             try:
