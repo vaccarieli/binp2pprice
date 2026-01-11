@@ -393,16 +393,19 @@ class AlertManager:
         t_no_offers = get_translation(self.config, "no_offers")
 
         timestamp = format_timestamp(self.config)
-        msg = f"📊 <b>{t_price_update}</b>\n"
-        msg += f"<b>{self.config.fiat}/{self.config.asset}</b>\n"
-        msg += f"⏰ {timestamp}\n"
-        msg += "─" * 30 + "\n\n"
 
-        # Add BCV official rate at the top
+        # Header with modern design
+        msg = f"╔═══ 📊 <b>{t_price_update}</b> ═══╗\n"
+        msg += f"║ <b>{self.config.fiat}/{self.config.asset}</b>  •  ⏰ {timestamp}\n"
+        msg += f"╚{'═' * 38}╝\n\n"
+
+        # BCV Official Rate with prominent display
         if bcv_rate:
-            msg += f"🏛️ <b>{t_bcv_rate}:</b> {bcv_rate:.2f} {self.config.fiat}\n\n"
+            msg += f"┌─ 🏛️ <b>{t_bcv_rate}</b> ─┐\n"
+            msg += f"│ <b>{bcv_rate:.2f} {self.config.fiat}</b>\n"
+            msg += f"└{'─' * 20}┘\n\n"
 
-        # BUY offer details
+        # BUY offer details with modern card layout
         if buy_price is not None and best_buy_offer:
             buy_adv = best_buy_offer.get("adv", {})
             buy_advertiser = best_buy_offer.get("advertiser", {})
@@ -411,26 +414,31 @@ class AlertManager:
             buy_available = float(buy_adv.get("surplusAmount", 0))
             buy_methods = ", ".join([
                 m.get("tradeMethodName", "")
-                for m in buy_adv.get("tradeMethods", [])[:2]  # Limit to first 2
+                for m in buy_adv.get("tradeMethods", [])[:2]
                 if m.get("tradeMethodName")
             ])
 
-            msg += f"💵 <b>{t_best_buy}:</b> {buy_price:.2f} {self.config.fiat}"
+            msg += f"┏━━ 💵 <b>{t_best_buy}</b> ━━┓\n"
+            msg += f"┃ <b>{buy_price:.2f}</b> {self.config.fiat}"
 
-            # Add BCV difference for BUY price
+            # Add BCV difference
             if bcv_rate and bcv_rate > 0:
                 buy_diff = ((buy_price - bcv_rate) / bcv_rate) * 100
-                emoji = "📈" if buy_diff > 0 else "📉"
-                msg += f" {emoji} <b>{buy_diff:+.1f}%</b> {t_vs_bcv}"
+                diff_emoji = "🟢" if buy_diff > 0 else "🔴"
+                arrow = "↗️" if buy_diff > 0 else "↘️"
+                msg += f"  {diff_emoji} <b>{arrow} {abs(buy_diff):.1f}%</b> {t_vs_bcv}"
 
-            msg += "\n"
-            msg += f"   {t_trader}: {buy_trader} ({buy_orders} {t_orders})\n"
-            msg += f"   {t_available}: {buy_available:.2f} USDT\n"
-            msg += f"   {t_payment}: {buy_methods}\n\n"
+            msg += f"\n┃\n"
+            msg += f"┃ 👤 {buy_trader}\n"
+            msg += f"┃ 📦 {buy_orders} {t_orders}  •  💰 {buy_available:.2f} USDT\n"
+            msg += f"┃ 💳 {buy_methods}\n"
+            msg += f"┗{'━' * 38}┛\n\n"
         else:
-            msg += f"💵 <b>{t_best_buy}:</b> {t_no_offers}\n\n"
+            msg += f"┏━━ 💵 <b>{t_best_buy}</b> ━━┓\n"
+            msg += f"┃ {t_no_offers}\n"
+            msg += f"┗{'━' * 38}┛\n\n"
 
-        # SELL offer details
+        # SELL offer details with modern card layout
         if sell_price is not None and best_sell_offer:
             sell_adv = best_sell_offer.get("adv", {})
             sell_advertiser = best_sell_offer.get("advertiser", {})
@@ -439,42 +447,66 @@ class AlertManager:
             sell_available = float(sell_adv.get("surplusAmount", 0))
             sell_methods = ", ".join([
                 m.get("tradeMethodName", "")
-                for m in sell_adv.get("tradeMethods", [])[:2]  # Limit to first 2
+                for m in sell_adv.get("tradeMethods", [])[:2]
                 if m.get("tradeMethodName")
             ])
 
-            msg += f"💰 <b>{t_best_sell}:</b> {sell_price:.2f} {self.config.fiat}"
+            msg += f"┏━━ 💰 <b>{t_best_sell}</b> ━━┓\n"
+            msg += f"┃ <b>{sell_price:.2f}</b> {self.config.fiat}"
 
-            # Add BCV difference for SELL price
+            # Add BCV difference
             if bcv_rate and bcv_rate > 0:
                 sell_diff = ((sell_price - bcv_rate) / bcv_rate) * 100
-                emoji = "📈" if sell_diff > 0 else "📉"
-                msg += f" {emoji} <b>{sell_diff:+.1f}%</b> {t_vs_bcv}"
+                diff_emoji = "🟢" if sell_diff > 0 else "🔴"
+                arrow = "↗️" if sell_diff > 0 else "↘️"
+                msg += f"  {diff_emoji} <b>{arrow} {abs(sell_diff):.1f}%</b> {t_vs_bcv}"
 
-            msg += "\n"
-            msg += f"   {t_trader}: {sell_trader} ({sell_orders} {t_orders})\n"
-            msg += f"   {t_available}: {sell_available:.2f} USDT\n"
-            msg += f"   {t_payment}: {sell_methods}\n\n"
+            msg += f"\n┃\n"
+            msg += f"┃ 👤 {sell_trader}\n"
+            msg += f"┃ 📦 {sell_orders} {t_orders}  •  💰 {sell_available:.2f} USDT\n"
+            msg += f"┃ 💳 {sell_methods}\n"
+            msg += f"┗{'━' * 38}┛\n\n"
         else:
-            msg += f"💰 <b>{t_best_sell}:</b> {t_no_offers}\n\n"
+            msg += f"┏━━ 💰 <b>{t_best_sell}</b> ━━┓\n"
+            msg += f"┃ {t_no_offers}\n"
+            msg += f"┗{'━' * 38}┛\n\n"
 
-        # Spread
+        # Spread with modern formatting
         if buy_price is not None and sell_price is not None:
             spread = buy_price - sell_price
             spread_pct = ((buy_price/sell_price - 1) * 100)
-            msg += f"📈 <b>{t_spread}:</b> {spread:.2f} {self.config.fiat} ({spread_pct:.2f}%)\n\n"
+            msg += f"╭─ 📊 <b>{t_spread}</b> ─╮\n"
+            msg += f"│ <b>{spread:.2f}</b> {self.config.fiat}  •  <b>{spread_pct:.2f}%</b>\n"
+            msg += f"╰{'─' * 25}╯\n\n"
 
-        # Price changes
+        # Price changes with enhanced visuals
         if changes:
-            msg += f"<b>{t_price_changes}:</b>\n"
+            msg += f"╔═ 📈 <b>{t_price_changes}</b> ═╗\n"
             for period in ["15m", "30m", "1h"]:
                 if period in changes:
                     data = changes[period]
-                    buy_emoji = "📈" if data['buy_change'] > 0 else "📉"
-                    sell_emoji = "📈" if data['sell_change'] > 0 else "📉"
-                    msg += f"\n{period}:\n"
-                    msg += f"  {buy_emoji} {t_best_buy}: {data['buy_change']:+.2f}%\n"
-                    msg += f"  {sell_emoji} {t_best_sell}: {data['sell_change']:+.2f}%\n"
+
+                    # Visual indicators for changes
+                    if data['buy_change'] > 0:
+                        buy_indicator = "🟢 ↗"
+                        buy_sign = "+"
+                    else:
+                        buy_indicator = "🔴 ↘"
+                        buy_sign = ""
+
+                    if data['sell_change'] > 0:
+                        sell_indicator = "🟢 ↗"
+                        sell_sign = "+"
+                    else:
+                        sell_indicator = "🔴 ↘"
+                        sell_sign = ""
+
+                    msg += f"║\n"
+                    msg += f"║ <b>{period}</b>\n"
+                    msg += f"║  💵 {buy_indicator} <b>{buy_sign}{data['buy_change']:.2f}%</b>\n"
+                    msg += f"║  💰 {sell_indicator} <b>{sell_sign}{data['sell_change']:.2f}%</b>\n"
+
+            msg += f"╚{'═' * 30}╝"
 
         # Edit existing message or send new one
         if last_message_id:
@@ -1123,23 +1155,34 @@ class PriceTracker:
                     self.alert_manager.delete_telegram(self.last_buy_alert_message_id)
                     self.logger.debug(f"Deleted previous BUY alert (same direction: {current_direction}, ID: {self.last_buy_alert_message_id})")
 
-                msg = f"⚡ <b>{t_alert_title}</b>\n"
-                msg += f"<b>{self.config.fiat}/{self.config.asset}</b>\n"
-                msg += f"⏰ {timestamp}\n"
-                msg += "─" * 30 + "\n\n"
+                # Modern alert header
+                msg = f"╔══════ ⚡ <b>{t_alert_title}</b> ⚡ ══════╗\n"
+                msg += f"║ <b>{self.config.fiat}/{self.config.asset}</b>  •  ⏰ {timestamp}\n"
+                msg += f"╚{'═' * 45}╝\n\n"
 
                 for change in buy_changes:
-                    msg += f"{change['emoji']} <b>{t_buy}</b> {change['direction']}\n"
-                    msg += f"   {t_change}: <b>{abs(change['change']):.2f}%</b>\n"
-                    msg += f"   {change['old_price']:.2f} → {change['new_price']:.2f} {self.config.fiat}\n"
+                    # Determine visual indicators
+                    if change['change'] > 0:
+                        trend_icon = "🟢 ↗️"
+                        change_color = "🔥"
+                    else:
+                        trend_icon = "🔴 ↘️"
+                        change_color = "❄️"
+
+                    msg += f"┏━━━━ 💵 <b>{t_buy}</b> {trend_icon} ━━━━┓\n"
+                    msg += f"┃\n"
+                    msg += f"┃ {change_color} <b>{t_change}:</b> <b>{abs(change['change']):.2f}%</b>\n"
+                    msg += f"┃ 💱 <b>{change['old_price']:.2f}</b> → <b>{change['new_price']:.2f}</b> {self.config.fiat}\n"
 
                     # Add trader info if available
                     if change.get('trader_info') and change['trader_info'].get('trader'):
                         trader_info = change['trader_info']
-                        msg += f"   {t_trader}: {trader_info['trader']} ({trader_info['orders']} {t_orders})\n"
-                        msg += f"   {t_available}: {trader_info['available']:.2f} {self.config.asset}\n"
+                        msg += f"┃\n"
+                        msg += f"┃ 👤 <b>{trader_info['trader']}</b>\n"
+                        msg += f"┃ 📦 {trader_info['orders']} {t_orders}\n"
+                        msg += f"┃ 💰 {trader_info['available']:.2f} {self.config.asset}\n"
 
-                    msg += "\n"
+                    msg += f"┗{'━' * 38}┛\n"
 
                 # Send as new message and store its ID and direction
                 message_id = self.alert_manager.send_telegram(msg)
@@ -1159,23 +1202,34 @@ class PriceTracker:
                     self.alert_manager.delete_telegram(self.last_sell_alert_message_id)
                     self.logger.debug(f"Deleted previous SELL alert (same direction: {current_direction}, ID: {self.last_sell_alert_message_id})")
 
-                msg = f"⚡ <b>{t_alert_title}</b>\n"
-                msg += f"<b>{self.config.fiat}/{self.config.asset}</b>\n"
-                msg += f"⏰ {timestamp}\n"
-                msg += "─" * 30 + "\n\n"
+                # Modern alert header
+                msg = f"╔══════ ⚡ <b>{t_alert_title}</b> ⚡ ══════╗\n"
+                msg += f"║ <b>{self.config.fiat}/{self.config.asset}</b>  •  ⏰ {timestamp}\n"
+                msg += f"╚{'═' * 45}╝\n\n"
 
                 for change in sell_changes:
-                    msg += f"{change['emoji']} <b>{t_sell}</b> {change['direction']}\n"
-                    msg += f"   {t_change}: <b>{abs(change['change']):.2f}%</b>\n"
-                    msg += f"   {change['old_price']:.2f} → {change['new_price']:.2f} {self.config.fiat}\n"
+                    # Determine visual indicators
+                    if change['change'] > 0:
+                        trend_icon = "🟢 ↗️"
+                        change_color = "🔥"
+                    else:
+                        trend_icon = "🔴 ↘️"
+                        change_color = "❄️"
+
+                    msg += f"┏━━━━ 💰 <b>{t_sell}</b> {trend_icon} ━━━━┓\n"
+                    msg += f"┃\n"
+                    msg += f"┃ {change_color} <b>{t_change}:</b> <b>{abs(change['change']):.2f}%</b>\n"
+                    msg += f"┃ 💱 <b>{change['old_price']:.2f}</b> → <b>{change['new_price']:.2f}</b> {self.config.fiat}\n"
 
                     # Add trader info if available
                     if change.get('trader_info') and change['trader_info'].get('trader'):
                         trader_info = change['trader_info']
-                        msg += f"   {t_trader}: {trader_info['trader']} ({trader_info['orders']} {t_orders})\n"
-                        msg += f"   {t_available}: {trader_info['available']:.2f} {self.config.asset}\n"
+                        msg += f"┃\n"
+                        msg += f"┃ 👤 <b>{trader_info['trader']}</b>\n"
+                        msg += f"┃ 📦 {trader_info['orders']} {t_orders}\n"
+                        msg += f"┃ 💰 {trader_info['available']:.2f} {self.config.asset}\n"
 
-                    msg += "\n"
+                    msg += f"┗{'━' * 38}┛\n"
 
                 # Send as new message and store its ID and direction
                 message_id = self.alert_manager.send_telegram(msg)
