@@ -503,7 +503,9 @@ class PriceTracker:
         # Telegram tracking
         self.last_telegram_message_id = None  # For editing price update messages
         self.last_buy_alert_message_id = None  # For deleting previous BUY alert messages
+        self.last_buy_alert_direction = None  # Track direction of last BUY alert ('UP' or 'DOWN')
         self.last_sell_alert_message_id = None  # For deleting previous SELL alert messages
+        self.last_sell_alert_direction = None  # Track direction of last SELL alert ('UP' or 'DOWN')
         self.telegram_buy_baseline = None  # Baseline for BUY price alerts
         self.telegram_sell_baseline = None  # Baseline for SELL price alerts
 
@@ -1022,6 +1024,9 @@ class PriceTracker:
         t_down = get_translation(self.config, "down")
         t_buy = get_translation(self.config, "buy")
         t_sell = get_translation(self.config, "sell")
+        t_trader = get_translation(self.config, "trader")
+        t_orders = get_translation(self.config, "orders")
+        t_available = get_translation(self.config, "available")
 
         threshold = self.config.telegram_sudden_change_threshold
         sudden_changes = []
@@ -1043,13 +1048,25 @@ class PriceTracker:
             if abs(buy_change) >= threshold:
                 direction = f"📈 {t_up}" if buy_change > 0 else f"📉 {t_down}"
                 emoji = "⚡" if abs(buy_change) >= threshold * 1.5 else "⚠️"
+
+                # Capture trader info at the moment of alert
+                trader_info = {}
+                if self.best_buy_offer:
+                    buy_advertiser = self.best_buy_offer.get("advertiser", {})
+                    trader_info = {
+                        'trader': buy_advertiser.get("nickName", "Unknown"),
+                        'orders': buy_advertiser.get("monthOrderCount", 0),
+                        'available': float(self.best_buy_offer.get("adv", {}).get("surplusAmount", 0))
+                    }
+
                 sudden_changes.append({
                     'type': 'BUY',
                     'direction': direction,
                     'change': buy_change,
                     'old_price': self.telegram_buy_baseline,
                     'new_price': current_buy,
-                    'emoji': emoji
+                    'emoji': emoji,
+                    'trader_info': trader_info
                 })
                 # Reset baseline immediately after detecting change
                 self.logger.info(f"BUY alert triggered: {buy_change:+.2f}% change. Resetting baseline from {self.telegram_buy_baseline:.2f} to {current_buy:.2f}")
@@ -1063,13 +1080,25 @@ class PriceTracker:
             if abs(sell_change) >= threshold:
                 direction = f"📈 {t_up}" if sell_change > 0 else f"📉 {t_down}"
                 emoji = "⚡" if abs(sell_change) >= threshold * 1.5 else "⚠️"
+
+                # Capture trader info at the moment of alert
+                trader_info = {}
+                if self.best_sell_offer:
+                    sell_advertiser = self.best_sell_offer.get("advertiser", {})
+                    trader_info = {
+                        'trader': sell_advertiser.get("nickName", "Unknown"),
+                        'orders': sell_advertiser.get("monthOrderCount", 0),
+                        'available': float(self.best_sell_offer.get("adv", {}).get("surplusAmount", 0))
+                    }
+
                 sudden_changes.append({
                     'type': 'SELL',
                     'direction': direction,
                     'change': sell_change,
                     'old_price': self.telegram_sell_baseline,
                     'new_price': current_sell,
-                    'emoji': emoji
+                    'emoji': emoji,
+                    'trader_info': trader_info
                 })
                 # Reset baseline immediately after detecting change
                 self.logger.info(f"SELL alert triggered: {sell_change:+.2f}% change. Resetting baseline from {self.telegram_sell_baseline:.2f} to {current_sell:.2f}")
@@ -1085,10 +1114,14 @@ class PriceTracker:
 
             # Send BUY alert if applicable
             if buy_changes:
-                # Delete previous BUY alert message
-                if self.last_buy_alert_message_id:
+                # Determine current alert direction
+                current_direction = 'UP' if buy_changes[0]['change'] > 0 else 'DOWN'
+
+                # Only delete previous alert if it's the SAME direction
+                # This preserves UP alerts when DOWN alerts come (and vice versa)
+                if self.last_buy_alert_message_id and self.last_buy_alert_direction == current_direction:
                     self.alert_manager.delete_telegram(self.last_buy_alert_message_id)
-                    self.logger.debug(f"Deleted previous BUY alert message (ID: {self.last_buy_alert_message_id})")
+                    self.logger.debug(f"Deleted previous BUY alert (same direction: {current_direction}, ID: {self.last_buy_alert_message_id})")
 
                 msg = f"⚡ <b>{t_alert_title}</b>\n"
                 msg += f"<b>{self.config.fiat}/{self.config.asset}</b>\n"
@@ -1098,20 +1131,33 @@ class PriceTracker:
                 for change in buy_changes:
                     msg += f"{change['emoji']} <b>{t_buy}</b> {change['direction']}\n"
                     msg += f"   {t_change}: <b>{abs(change['change']):.2f}%</b>\n"
-                    msg += f"   {change['old_price']:.2f} → {change['new_price']:.2f} {self.config.fiat}\n\n"
+                    msg += f"   {change['old_price']:.2f} → {change['new_price']:.2f} {self.config.fiat}\n"
 
-                # Send as new message and store its ID
+                    # Add trader info if available
+                    if change.get('trader_info') and change['trader_info'].get('trader'):
+                        trader_info = change['trader_info']
+                        msg += f"   {t_trader}: {trader_info['trader']} ({trader_info['orders']} {t_orders})\n"
+                        msg += f"   {t_available}: {trader_info['available']:.2f} {self.config.asset}\n"
+
+                    msg += "\n"
+
+                # Send as new message and store its ID and direction
                 message_id = self.alert_manager.send_telegram(msg)
                 if message_id:
                     self.last_buy_alert_message_id = message_id
-                    self.logger.debug(f"Stored new BUY alert message ID: {message_id}")
+                    self.last_buy_alert_direction = current_direction
+                    self.logger.debug(f"Stored new BUY alert (direction: {current_direction}, ID: {message_id})")
 
             # Send SELL alert if applicable
             if sell_changes:
-                # Delete previous SELL alert message
-                if self.last_sell_alert_message_id:
+                # Determine current alert direction
+                current_direction = 'UP' if sell_changes[0]['change'] > 0 else 'DOWN'
+
+                # Only delete previous alert if it's the SAME direction
+                # This preserves UP alerts when DOWN alerts come (and vice versa)
+                if self.last_sell_alert_message_id and self.last_sell_alert_direction == current_direction:
                     self.alert_manager.delete_telegram(self.last_sell_alert_message_id)
-                    self.logger.debug(f"Deleted previous SELL alert message (ID: {self.last_sell_alert_message_id})")
+                    self.logger.debug(f"Deleted previous SELL alert (same direction: {current_direction}, ID: {self.last_sell_alert_message_id})")
 
                 msg = f"⚡ <b>{t_alert_title}</b>\n"
                 msg += f"<b>{self.config.fiat}/{self.config.asset}</b>\n"
@@ -1121,13 +1167,22 @@ class PriceTracker:
                 for change in sell_changes:
                     msg += f"{change['emoji']} <b>{t_sell}</b> {change['direction']}\n"
                     msg += f"   {t_change}: <b>{abs(change['change']):.2f}%</b>\n"
-                    msg += f"   {change['old_price']:.2f} → {change['new_price']:.2f} {self.config.fiat}\n\n"
+                    msg += f"   {change['old_price']:.2f} → {change['new_price']:.2f} {self.config.fiat}\n"
 
-                # Send as new message and store its ID
+                    # Add trader info if available
+                    if change.get('trader_info') and change['trader_info'].get('trader'):
+                        trader_info = change['trader_info']
+                        msg += f"   {t_trader}: {trader_info['trader']} ({trader_info['orders']} {t_orders})\n"
+                        msg += f"   {t_available}: {trader_info['available']:.2f} {self.config.asset}\n"
+
+                    msg += "\n"
+
+                # Send as new message and store its ID and direction
                 message_id = self.alert_manager.send_telegram(msg)
                 if message_id:
                     self.last_sell_alert_message_id = message_id
-                    self.logger.debug(f"Stored new SELL alert message ID: {message_id}")
+                    self.last_sell_alert_direction = current_direction
+                    self.logger.debug(f"Stored new SELL alert (direction: {current_direction}, ID: {message_id})")
     
     def display_status(self, buy_price: Optional[float], sell_price: Optional[float], changes: Dict[str, dict]):
         """Display current status"""
