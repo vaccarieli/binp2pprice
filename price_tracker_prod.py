@@ -13,6 +13,7 @@ import signal
 import sys
 import os
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from collections import deque
 from typing import Optional, Tuple, Dict, List
 from dataclasses import dataclass
@@ -182,6 +183,31 @@ def get_translation(config: Config, key: str) -> str:
     """Get translated string based on configured language"""
     lang = config.telegram_language
     return TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key, key)
+
+
+def get_venezuela_time() -> datetime:
+    """Get current time in Venezuela timezone (VET, UTC-4)"""
+    return datetime.now(ZoneInfo("America/Caracas"))
+
+
+def format_timestamp(config: Config) -> str:
+    """Format timestamp according to language preference"""
+    vet_time = get_venezuela_time()
+
+    if config.telegram_language == "es":
+        # Spanish format: "11 Ene 2026, 01:00:25 AM"
+        months_es = {
+            1: "Ene", 2: "Feb", 3: "Mar", 4: "Abr", 5: "May", 6: "Jun",
+            7: "Jul", 8: "Ago", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dic"
+        }
+        day = vet_time.day
+        month = months_es[vet_time.month]
+        year = vet_time.year
+        time_12h = vet_time.strftime("%I:%M:%S %p")
+        return f"{day} {month} {year}, {time_12h}"
+    else:
+        # English format: "Jan 11, 2026, 01:00:25 AM"
+        return vet_time.strftime("%b %d, %Y, %I:%M:%S %p")
 
 
 class AlertManager:
@@ -366,7 +392,7 @@ class AlertManager:
         t_price_changes = get_translation(self.config, "price_changes")
         t_no_offers = get_translation(self.config, "no_offers")
 
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        timestamp = format_timestamp(self.config)
         msg = f"📊 <b>{t_price_update}</b>\n"
         msg += f"<b>{self.config.fiat}/{self.config.asset}</b>\n"
         msg += f"⏰ {timestamp}\n"
@@ -1051,7 +1077,7 @@ class PriceTracker:
 
         # Send separate alerts for BUY and SELL changes
         if sudden_changes:
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            timestamp = format_timestamp(self.config)
 
             # Group changes by type
             buy_changes = [c for c in sudden_changes if c['type'] == 'BUY']
