@@ -173,6 +173,17 @@ Check for errors:
 grep ERROR price_tracker.log
 ```
 
+View alerts history (for analysis):
+```bash
+tail -f alerts_history.log
+# View all BUY alerts
+grep "BUY ALERT" alerts_history.log
+# View all SELL alerts
+grep "SELL ALERT" alerts_history.log
+# View alerts with specific trader
+grep "Trader: TraderId" alerts_history.log
+```
+
 ## Files
 
 - `price_tracker_prod.py` - Main application
@@ -182,6 +193,7 @@ grep ERROR price_tracker.log
 - `get_telegram_chat_id.py` - Helper to get Telegram chat ID
 - `price_history_VES_USDT.json` - Historical price data (auto-generated)
 - `price_tracker.log` - Application logs (auto-generated)
+- `alerts_history.log` - Detailed BUY/SELL alerts log for analysis (auto-generated)
 
 ## Security
 

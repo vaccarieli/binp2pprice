@@ -438,9 +438,7 @@ class PriceTracker:
         # Telegram tracking
         self.last_telegram_message_id = None  # For editing price update messages
         self.last_buy_alert_message_id = None  # For deleting previous BUY alert messages
-        self.last_buy_alert_direction = None  # Track direction of last BUY alert ('UP' or 'DOWN')
         self.last_sell_alert_message_id = None  # For deleting previous SELL alert messages
-        self.last_sell_alert_direction = None  # Track direction of last SELL alert ('UP' or 'DOWN')
         self.telegram_buy_baseline = None  # Baseline for BUY price alerts
         self.telegram_sell_baseline = None  # Baseline for SELL price alerts
 
@@ -448,6 +446,9 @@ class PriceTracker:
         self.bcv_rate = None  # Current BCV rate
         self.bcv_rate_timestamp = None  # When BCV rate was last fetched
         self.bcv_rate_cache_duration = 3600  # Cache for 1 hour
+
+        # Setup dedicated alerts logger
+        self.alerts_logger = self._setup_alerts_logger()
 
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -457,7 +458,55 @@ class PriceTracker:
         """Handle shutdown signals gracefully"""
         self.logger.info(f"Received signal {signum}, shutting down...")
         self.running = False
-    
+
+    def _setup_alerts_logger(self) -> logging.Logger:
+        """Setup dedicated logger for BUY/SELL alerts"""
+        alerts_logger = logging.getLogger('alerts')
+        alerts_logger.setLevel(logging.INFO)
+
+        # Create file handler for alerts
+        alerts_file = 'alerts_history.log'
+        file_handler = logging.FileHandler(alerts_file, encoding='utf-8')
+        file_handler.setLevel(logging.INFO)
+
+        # Professional format with all details
+        formatter = logging.Formatter(
+            '%(asctime)s | %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        file_handler.setFormatter(formatter)
+
+        # Avoid duplicate handlers
+        if not alerts_logger.handlers:
+            alerts_logger.addHandler(file_handler)
+
+        alerts_logger.propagate = False
+        return alerts_logger
+
+    def _log_alert(self, alert_type: str, change: dict):
+        """Log detailed alert information for analysis"""
+        direction = "UP ↗️" if change['change'] > 0 else "DOWN ↘️"
+
+        # Build detailed log entry
+        log_entry = f"{alert_type} ALERT | Direction: {direction} | "
+        log_entry += f"Change: {change['change']:+.2f}% | "
+        log_entry += f"Old Price: {change['old_price']:.2f} {self.config.fiat} | "
+        log_entry += f"New Price: {change['new_price']:.2f} {self.config.fiat} | "
+        log_entry += f"Difference: {change['new_price'] - change['old_price']:+.2f} {self.config.fiat}"
+
+        # Add trader information if available
+        if change.get('trader_info') and change['trader_info'].get('trader'):
+            trader = change['trader_info']
+            log_entry += f" | Trader: {trader['trader']}"
+            log_entry += f" | Orders: {trader['orders']}"
+            log_entry += f" | Available: {trader['available']:.2f} {self.config.asset}"
+
+            if trader.get('payment_methods'):
+                methods = ', '.join(trader['payment_methods'])
+                log_entry += f" | Payment Methods: {methods}"
+
+        self.alerts_logger.info(log_entry)
+
     def _create_session(self) -> requests.Session:
         """Create requests session with retry logic"""
         session = requests.Session()
@@ -1049,14 +1098,10 @@ class PriceTracker:
 
             # Send BUY alert if applicable
             if buy_changes:
-                # Determine current alert direction
-                current_direction = 'UP' if buy_changes[0]['change'] > 0 else 'DOWN'
-
-                # Only delete previous alert if it's the SAME direction
-                # This preserves UP alerts when DOWN alerts come (and vice versa)
-                if self.last_buy_alert_message_id and self.last_buy_alert_direction == current_direction:
+                # Delete previous BUY alert message (always, regardless of direction)
+                if self.last_buy_alert_message_id:
                     self.alert_manager.delete_telegram(self.last_buy_alert_message_id)
-                    self.logger.debug(f"Deleted previous BUY alert (same direction: {current_direction}, ID: {self.last_buy_alert_message_id})")
+                    self.logger.debug(f"Deleted previous BUY alert message (ID: {self.last_buy_alert_message_id})")
 
                 # Modern alert header
                 msg = f"╔══════ ⚡ <b>{t_alert_title}</b> ⚡ ══════╗\n"
@@ -1064,6 +1109,9 @@ class PriceTracker:
                 msg += f"╚{'═' * 45}╝\n\n"
 
                 for change in buy_changes:
+                    # Log alert details for analysis
+                    self._log_alert("BUY", change)
+
                     # Determine visual indicators
                     if change['change'] > 0:
                         trend_icon = "🟢 ↗️"
@@ -1087,23 +1135,18 @@ class PriceTracker:
 
                     msg += f"┗{'━' * 38}┛\n"
 
-                # Send as new message and store its ID and direction
+                # Send as new message and store its ID
                 message_id = self.alert_manager.send_telegram(msg)
                 if message_id:
                     self.last_buy_alert_message_id = message_id
-                    self.last_buy_alert_direction = current_direction
-                    self.logger.debug(f"Stored new BUY alert (direction: {current_direction}, ID: {message_id})")
+                    self.logger.debug(f"Stored new BUY alert message (ID: {message_id})")
 
             # Send SELL alert if applicable
             if sell_changes:
-                # Determine current alert direction
-                current_direction = 'UP' if sell_changes[0]['change'] > 0 else 'DOWN'
-
-                # Only delete previous alert if it's the SAME direction
-                # This preserves UP alerts when DOWN alerts come (and vice versa)
-                if self.last_sell_alert_message_id and self.last_sell_alert_direction == current_direction:
+                # Delete previous SELL alert message (always, regardless of direction)
+                if self.last_sell_alert_message_id:
                     self.alert_manager.delete_telegram(self.last_sell_alert_message_id)
-                    self.logger.debug(f"Deleted previous SELL alert (same direction: {current_direction}, ID: {self.last_sell_alert_message_id})")
+                    self.logger.debug(f"Deleted previous SELL alert message (ID: {self.last_sell_alert_message_id})")
 
                 # Modern alert header
                 msg = f"╔══════ ⚡ <b>{t_alert_title}</b> ⚡ ══════╗\n"
@@ -1111,6 +1154,9 @@ class PriceTracker:
                 msg += f"╚{'═' * 45}╝\n\n"
 
                 for change in sell_changes:
+                    # Log alert details for analysis
+                    self._log_alert("SELL", change)
+
                     # Determine visual indicators
                     if change['change'] > 0:
                         trend_icon = "🟢 ↗️"
@@ -1134,12 +1180,11 @@ class PriceTracker:
 
                     msg += f"┗{'━' * 38}┛\n"
 
-                # Send as new message and store its ID and direction
+                # Send as new message and store its ID
                 message_id = self.alert_manager.send_telegram(msg)
                 if message_id:
                     self.last_sell_alert_message_id = message_id
-                    self.last_sell_alert_direction = current_direction
-                    self.logger.debug(f"Stored new SELL alert (direction: {current_direction}, ID: {message_id})")
+                    self.logger.debug(f"Stored new SELL alert message (ID: {message_id})")
     
     def display_status(self, buy_price: Optional[float], sell_price: Optional[float], changes: Dict[str, dict]):
         """Display current status"""
