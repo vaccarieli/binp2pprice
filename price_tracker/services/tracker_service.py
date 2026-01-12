@@ -188,9 +188,8 @@ class TrackerService:
             changes=changes,
             best_buy_offer=best_buy_offer,
             best_sell_offer=best_sell_offer,
-            history_count=self.price_service.get_history_count(),
+            price_history_count=self.price_service.get_history_count(),
             consecutive_failures=self.consecutive_failures,
-            check_interval=self.config.check_interval,
             running=self.running
         )
 
@@ -201,9 +200,8 @@ class TrackerService:
         Displays a warning with filter information and suggestions.
         Increases backoff time if failures persist.
         """
-        self.console.display_no_offers(
-            config=self.config,
-            history_count=self.price_service.get_history_count(),
+        self.console.display_no_offers_warning(
+            price_history_count=self.price_service.get_history_count(),
             consecutive_failures=self.consecutive_failures,
             running=self.running
         )
@@ -267,21 +265,21 @@ class TrackerService:
         """Log startup information."""
         self.logger.info("=" * 70)
         self.logger.info("Starting P2P Price Tracker")
-        self.logger.info(f"Asset: {self.config.asset}")
-        self.logger.info(f"Fiat: {self.config.fiat}")
+        self.logger.info(f"Asset: {self.config.filters.asset}")
+        self.logger.info(f"Fiat: {self.config.filters.fiat}")
         self.logger.info(f"Check interval: {self.config.check_interval}s")
         self.logger.info(f"Alert threshold: ±{self.config.alert_threshold}%")
 
-        if self.config.payment_methods:
-            self.logger.info(f"Payment methods: {', '.join(self.config.payment_methods)}")
-        if self.config.exclude_methods:
-            self.logger.info(f"Excluding: {', '.join(self.config.exclude_methods)}")
+        if self.config.filters.payment_methods:
+            self.logger.info(f"Payment methods: {', '.join(self.config.filters.payment_methods)}")
+        if self.config.filters.exclude_methods:
+            self.logger.info(f"Excluding: {', '.join(self.config.filters.exclude_methods)}")
 
-        if self.config.telegram_enabled:
+        if self.config.telegram.enabled:
             self.logger.info(
                 f"Telegram alerts: ENABLED "
-                f"(regular: {self.config.telegram_regular_updates}, "
-                f"threshold: {self.config.telegram_sudden_change_threshold}%)"
+                f"(regular: {self.config.telegram.regular_updates}, "
+                f"threshold: {self.config.telegram.sudden_change_threshold}%)"
             )
         else:
             self.logger.info("Telegram alerts: DISABLED")

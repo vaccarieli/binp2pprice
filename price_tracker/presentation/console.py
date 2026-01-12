@@ -61,7 +61,7 @@ class ConsoleDisplay:
         self._clear_screen()
 
         print("=" * 70)
-        print(f"Binance P2P {self.config.fiat}/{self.config.asset} Price Tracker")
+        print(f"Binance P2P {self.config.filters.fiat}/{self.config.filters.asset} Price Tracker")
         print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"Status: {'RUNNING' if running else 'STOPPING'}")
         print("=" * 70)
@@ -81,7 +81,7 @@ class ConsoleDisplay:
                 if m.get("tradeMethodName")
             ])
 
-            print(f"  Best BUY:  {buy_price:.2f} {self.config.fiat}/USDT")
+            print(f"  Best BUY:  {buy_price:.2f} {self.config.filters.fiat}/USDT")
             print(f"    Trader: {buy_trader} (Orders: {buy_orders})")
             print(f"    Available: {buy_available:.2f} USDT")
             print(f"    Payment: {buy_methods}")
@@ -103,7 +103,7 @@ class ConsoleDisplay:
                 if m.get("tradeMethodName")
             ])
 
-            print(f"  Best SELL: {sell_price:.2f} {self.config.fiat}/USDT")
+            print(f"  Best SELL: {sell_price:.2f} {self.config.filters.fiat}/USDT")
             print(f"    Trader: {sell_trader} (Orders: {sell_orders})")
             print(f"    Available: {sell_available:.2f} USDT")
             print(f"    Payment: {sell_methods}")
@@ -116,7 +116,7 @@ class ConsoleDisplay:
         if buy_price is not None and sell_price is not None:
             spread = buy_price - sell_price
             spread_pct = ((buy_price/sell_price - 1) * 100)
-            print(f"  Spread: {spread:.2f} {self.config.fiat} ({spread_pct:.2f}%)")
+            print(f"  Spread: {spread:.2f} {self.config.filters.fiat} ({spread_pct:.2f}%)")
         else:
             print(f"  Spread: N/A (need both BUY and SELL offers)")
 
@@ -154,7 +154,7 @@ class ConsoleDisplay:
         self._clear_screen()
 
         print("=" * 70)
-        print(f"Binance P2P {self.config.fiat}/{self.config.asset} Price Tracker")
+        print(f"Binance P2P {self.config.filters.fiat}/{self.config.filters.asset} Price Tracker")
         print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"Status: {'RUNNING' if running else 'STOPPING'}")
         print("=" * 70)
@@ -163,23 +163,23 @@ class ConsoleDisplay:
         print()
         print("Current filters:")
 
-        if self.config.payment_methods:
-            print(f"  Payment methods: {', '.join(self.config.payment_methods)}")
+        if self.config.filters.payment_methods:
+            print(f"  Payment methods: {', '.join(self.config.filters.payment_methods)}")
 
-        if hasattr(self.config, 'min_amount') and self.config.min_amount > 0:
-            print(f"  Minimum amount: {self.config.min_amount:,.0f} {self.config.fiat}")
+        if hasattr(self.config, 'min_amount') and self.config.filters.min_amount > 0:
+            print(f"  Minimum amount: {self.config.filters.min_amount:,.0f} {self.config.filters.fiat}")
 
-        if hasattr(self.config, 'exclude_methods') and self.config.exclude_methods:
-            print(f"  Excluding: {', '.join(self.config.exclude_methods)}")
+        if hasattr(self.config, 'exclude_methods') and self.config.filters.exclude_methods:
+            print(f"  Excluding: {', '.join(self.config.filters.exclude_methods)}")
 
         print()
         print("Suggestions:")
 
-        if hasattr(self.config, 'min_amount') and self.config.min_amount > 0:
-            print(f"  • Lower min_amount (currently {self.config.min_amount:,.0f} {self.config.fiat})")
+        if hasattr(self.config, 'min_amount') and self.config.filters.min_amount > 0:
+            print(f"  • Lower min_amount (currently {self.config.filters.min_amount:,.0f} {self.config.filters.fiat})")
             print(f"  • Try: python price_tracker_prod.py -m 0")
 
-        if self.config.payment_methods:
+        if self.config.filters.payment_methods:
             print(f"  • Try different payment method")
             print(f"  • Remove payment filter: python price_tracker_prod.py -p \"\"")
 

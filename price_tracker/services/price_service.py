@@ -31,6 +31,10 @@ class PriceService:
         binance_client: BinanceP2PClient,
         bcv_client: BCVRateClient,
         offer_filter: OfferFilter,
+        payment_methods: list,
+        exclude_methods: list,
+        min_amount: float,
+        fiat: str,
         max_history: int = 1000
     ):
         """
@@ -40,11 +44,19 @@ class PriceService:
             binance_client: Client for interacting with Binance P2P API
             bcv_client: Client for fetching BCV official rates
             offer_filter: Filter for processing offers based on criteria
+            payment_methods: List of payment methods to filter by
+            exclude_methods: List of payment methods to exclude
+            min_amount: Minimum transaction amount
+            fiat: Fiat currency code
             max_history: Maximum number of price records to keep in history
         """
         self.binance_client = binance_client
         self.bcv_client = bcv_client
         self.offer_filter = offer_filter
+        self.payment_methods = payment_methods
+        self.exclude_methods = exclude_methods
+        self.min_amount = min_amount
+        self.fiat = fiat
         self.price_history = deque(maxlen=max_history)
         self.logger = logging.getLogger(__name__)
 
@@ -64,8 +76,16 @@ class PriceService:
             matching offers are found.
         """
         # Fetch offers from API
-        buy_data = self.binance_client.get_offers("BUY")
-        sell_data = self.binance_client.get_offers("SELL")
+        buy_data = self.binance_client.fetch_offers(
+            "BUY",
+            payment_methods=self.payment_methods,
+            min_amount=self.min_amount
+        )
+        sell_data = self.binance_client.fetch_offers(
+            "SELL",
+            payment_methods=self.payment_methods,
+            min_amount=self.min_amount
+        )
 
         if not buy_data or not sell_data:
             return None, None
@@ -76,13 +96,21 @@ class PriceService:
             sell_offers = sell_data.get("data", [])
 
             # Apply filters
-            buy_offers = self.offer_filter.filter_promoted_ads(buy_offers)
-            buy_offers = self.offer_filter.filter_by_exclude_methods(buy_offers)
-            buy_offers = self.offer_filter.filter_by_amount(buy_offers)
+            buy_offers = self.offer_filter.filter_promoted(buy_offers)
+            buy_offers = self.offer_filter.filter_by_exclude_methods(
+                buy_offers, self.exclude_methods
+            )
+            buy_offers = self.offer_filter.filter_by_amount(
+                buy_offers, self.min_amount, self.fiat
+            )
 
-            sell_offers = self.offer_filter.filter_promoted_ads(sell_offers)
-            sell_offers = self.offer_filter.filter_by_exclude_methods(sell_offers)
-            sell_offers = self.offer_filter.filter_by_amount(sell_offers)
+            sell_offers = self.offer_filter.filter_promoted(sell_offers)
+            sell_offers = self.offer_filter.filter_by_exclude_methods(
+                sell_offers, self.exclude_methods
+            )
+            sell_offers = self.offer_filter.filter_by_amount(
+                sell_offers, self.min_amount, self.fiat
+            )
 
             self.logger.info(
                 f"After filtering: {len(buy_offers)} BUY, "

@@ -47,27 +47,27 @@ class TelegramFormatter:
             Formatted HTML message string for Telegram
         """
         # Get translations
-        t_price_update = get_translation(self.config, "price_update")
-        t_bcv_rate = get_translation(self.config, "bcv_official_rate")
-        t_best_buy = get_translation(self.config, "best_buy")
-        t_best_sell = get_translation(self.config, "best_sell")
-        t_vs_bcv = get_translation(self.config, "vs_bcv")
-        t_orders = get_translation(self.config, "orders")
-        t_spread = get_translation(self.config, "spread")
-        t_price_changes = get_translation(self.config, "price_changes")
-        t_no_offers = get_translation(self.config, "no_offers")
+        t_price_update = get_translation(self.config.telegram.language, "price_update")
+        t_bcv_rate = get_translation(self.config.telegram.language, "bcv_official_rate")
+        t_best_buy = get_translation(self.config.telegram.language, "best_buy")
+        t_best_sell = get_translation(self.config.telegram.language, "best_sell")
+        t_vs_bcv = get_translation(self.config.telegram.language, "vs_bcv")
+        t_orders = get_translation(self.config.telegram.language, "orders")
+        t_spread = get_translation(self.config.telegram.language, "spread")
+        t_price_changes = get_translation(self.config.telegram.language, "price_changes")
+        t_no_offers = get_translation(self.config.telegram.language, "no_offers")
 
-        timestamp = format_timestamp(self.config)
+        timestamp = format_timestamp(self.config.telegram.language)
 
         # Header with modern design
         msg = f"╔═══ 📊 <b>{t_price_update}</b> ═══╗\n"
-        msg += f"║ <b>{self.config.fiat}/{self.config.asset}</b>  •  ⏰ {timestamp}\n"
+        msg += f"║ <b>{self.config.filters.fiat}/{self.config.filters.asset}</b>  •  ⏰ {timestamp}\n"
         msg += f"╚{'═' * 38}╝\n\n"
 
         # BCV Official Rate with prominent display
         if bcv_rate:
             msg += f"┌─ 🏛️ <b>{t_bcv_rate}</b> ─┐\n"
-            msg += f"│ <b>{bcv_rate:.2f} {self.config.fiat}</b>\n"
+            msg += f"│ <b>{bcv_rate:.2f} {self.config.filters.fiat}</b>\n"
             msg += f"└{'─' * 20}┘\n\n"
 
         # BUY offer details with modern card layout
@@ -84,7 +84,7 @@ class TelegramFormatter:
             ])
 
             msg += f"┏━━ 💵 <b>{t_best_buy}</b> ━━┓\n"
-            msg += f"┃ <b>{buy_price:.2f}</b> {self.config.fiat}"
+            msg += f"┃ <b>{buy_price:.2f}</b> {self.config.filters.fiat}"
 
             # Add BCV difference
             if bcv_rate and bcv_rate > 0:
@@ -117,7 +117,7 @@ class TelegramFormatter:
             ])
 
             msg += f"┏━━ 💰 <b>{t_best_sell}</b> ━━┓\n"
-            msg += f"┃ <b>{sell_price:.2f}</b> {self.config.fiat}"
+            msg += f"┃ <b>{sell_price:.2f}</b> {self.config.filters.fiat}"
 
             # Add BCV difference
             if bcv_rate and bcv_rate > 0:
@@ -141,7 +141,7 @@ class TelegramFormatter:
             spread = buy_price - sell_price
             spread_pct = ((buy_price/sell_price - 1) * 100)
             msg += f"╭─ 📊 <b>{t_spread}</b> ─╮\n"
-            msg += f"│ <b>{spread:.2f}</b> {self.config.fiat}  •  <b>{spread_pct:.2f}%</b>\n"
+            msg += f"│ <b>{spread:.2f}</b> {self.config.filters.fiat}  •  <b>{spread_pct:.2f}%</b>\n"
             msg += f"╰{'─' * 25}╯\n\n"
 
         # Price changes with enhanced visuals
@@ -197,18 +197,18 @@ class TelegramFormatter:
             Formatted HTML alert message string for Telegram
         """
         # Get translations
-        t_alert_title = get_translation(self.config, "alert_title")
-        t_change = get_translation(self.config, "change")
-        t_buy = get_translation(self.config, "buy")
-        t_sell = get_translation(self.config, "sell")
-        t_orders = get_translation(self.config, "orders")
+        t_alert_title = get_translation(self.config.telegram.language, "alert_title")
+        t_change = get_translation(self.config.telegram.language, "change")
+        t_buy = get_translation(self.config.telegram.language, "buy")
+        t_sell = get_translation(self.config.telegram.language, "sell")
+        t_orders = get_translation(self.config.telegram.language, "orders")
 
         if timestamp is None:
-            timestamp = format_timestamp(self.config)
+            timestamp = format_timestamp(self.config.telegram.language)
 
         # Modern alert header
         msg = f"╔══════ ⚡ <b>{t_alert_title}</b> ⚡ ══════╗\n"
-        msg += f"║ <b>{self.config.fiat}/{self.config.asset}</b>  •  ⏰ {timestamp}\n"
+        msg += f"║ <b>{self.config.filters.fiat}/{self.config.filters.asset}</b>  •  ⏰ {timestamp}\n"
         msg += f"╚{'═' * 45}╝\n\n"
 
         # Determine visual indicators
@@ -230,7 +230,7 @@ class TelegramFormatter:
         msg += f"┏━━━━ {type_icon} <b>{type_label}</b> {trend_icon} ━━━━┓\n"
         msg += f"┃\n"
         msg += f"┃ {change_color} <b>{t_change}:</b> <b>{abs(change_data['change']):.2f}%</b>\n"
-        msg += f"┃ 💱 <b>{change_data['old_price']:.2f}</b> → <b>{change_data['new_price']:.2f}</b> {self.config.fiat}\n"
+        msg += f"┃ 💱 <b>{change_data['old_price']:.2f}</b> → <b>{change_data['new_price']:.2f}</b> {self.config.filters.fiat}\n"
 
         # Add trader info if available
         if change_data.get('trader_info') and change_data['trader_info'].get('trader'):
@@ -238,7 +238,7 @@ class TelegramFormatter:
             msg += f"┃\n"
             msg += f"┃ 👤 <b>{trader_info['trader']}</b>\n"
             msg += f"┃ 📦 {trader_info['orders']} {t_orders}\n"
-            msg += f"┃ 💰 {trader_info['available']:.2f} {self.config.asset}\n"
+            msg += f"┃ 💰 {trader_info['available']:.2f} {self.config.filters.asset}\n"
 
         msg += f"┗{'━' * 38}┛\n"
 
@@ -262,18 +262,18 @@ class TelegramFormatter:
             Formatted HTML alert message string for Telegram
         """
         # Get translations
-        t_alert_title = get_translation(self.config, "alert_title")
-        t_change = get_translation(self.config, "change")
-        t_buy = get_translation(self.config, "buy")
-        t_sell = get_translation(self.config, "sell")
-        t_orders = get_translation(self.config, "orders")
+        t_alert_title = get_translation(self.config.telegram.language, "alert_title")
+        t_change = get_translation(self.config.telegram.language, "change")
+        t_buy = get_translation(self.config.telegram.language, "buy")
+        t_sell = get_translation(self.config.telegram.language, "sell")
+        t_orders = get_translation(self.config.telegram.language, "orders")
 
         if timestamp is None:
-            timestamp = format_timestamp(self.config)
+            timestamp = format_timestamp(self.config.telegram.language)
 
         # Modern alert header
         msg = f"╔══════ ⚡ <b>{t_alert_title}</b> ⚡ ══════╗\n"
-        msg += f"║ <b>{self.config.fiat}/{self.config.asset}</b>  •  ⏰ {timestamp}\n"
+        msg += f"║ <b>{self.config.filters.fiat}/{self.config.filters.asset}</b>  •  ⏰ {timestamp}\n"
         msg += f"╚{'═' * 45}╝\n\n"
 
         for change_data in changes:
@@ -296,7 +296,7 @@ class TelegramFormatter:
             msg += f"┏━━━━ {type_icon} <b>{type_label}</b> {trend_icon} ━━━━┓\n"
             msg += f"┃\n"
             msg += f"┃ {change_color} <b>{t_change}:</b> <b>{abs(change_data['change']):.2f}%</b>\n"
-            msg += f"┃ 💱 <b>{change_data['old_price']:.2f}</b> → <b>{change_data['new_price']:.2f}</b> {self.config.fiat}\n"
+            msg += f"┃ 💱 <b>{change_data['old_price']:.2f}</b> → <b>{change_data['new_price']:.2f}</b> {self.config.filters.fiat}\n"
 
             # Add trader info if available
             if change_data.get('trader_info') and change_data['trader_info'].get('trader'):
@@ -304,7 +304,7 @@ class TelegramFormatter:
                 msg += f"┃\n"
                 msg += f"┃ 👤 <b>{trader_info['trader']}</b>\n"
                 msg += f"┃ 📦 {trader_info['orders']} {t_orders}\n"
-                msg += f"┃ 💰 {trader_info['available']:.2f} {self.config.asset}\n"
+                msg += f"┃ 💰 {trader_info['available']:.2f} {self.config.filters.asset}\n"
 
             msg += f"┗{'━' * 38}┛\n"
 

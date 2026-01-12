@@ -271,7 +271,7 @@ class AlertService:
             for change in buy_changes:
                 self._log_alert("BUY", change)
 
-            message = self.formatter.format_sudden_change_alert(buy_changes, "BUY")
+            message = self.formatter.format_multi_alert(buy_changes, "BUY")
             message_id = self.telegram_client.send_message(message)
 
             if message_id:
@@ -291,7 +291,7 @@ class AlertService:
             for change in sell_changes:
                 self._log_alert("SELL", change)
 
-            message = self.formatter.format_sudden_change_alert(sell_changes, "SELL")
+            message = self.formatter.format_multi_alert(sell_changes, "SELL")
             message_id = self.telegram_client.send_message(message)
 
             if message_id:

@@ -158,7 +158,11 @@ Examples:
         binance_client=binance_client,
         bcv_client=bcv_client,
         offer_filter=offer_filter,
-        config=config
+        payment_methods=config.filters.payment_methods,
+        exclude_methods=config.filters.exclude_methods,
+        min_amount=float(config.filters.min_amount),
+        fiat=config.filters.fiat,
+        max_history=config.max_history
     )
 
     # Telegram (only if enabled)
@@ -167,17 +171,19 @@ Examples:
             bot_token=config.telegram.bot_token,
             chat_id=config.telegram.chat_id
         )
-        telegram_formatter = TelegramFormatter()
+        telegram_formatter = TelegramFormatter(config)
         alert_service = AlertService(
             telegram_client=telegram_client,
-            telegram_formatter=telegram_formatter,
-            config=config
+            formatter=telegram_formatter,
+            sudden_change_threshold=config.telegram.sudden_change_threshold
         )
     else:
+        # Create a minimal formatter even when Telegram is disabled
+        telegram_formatter = TelegramFormatter(config)
         alert_service = AlertService(
             telegram_client=None,
-            telegram_formatter=None,
-            config=config
+            formatter=telegram_formatter,
+            sudden_change_threshold=config.telegram.sudden_change_threshold
         )
 
     # Infrastructure

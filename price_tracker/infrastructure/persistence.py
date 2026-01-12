@@ -26,26 +26,20 @@ class HistoryPersistence:
         self.logger = logging.getLogger(__name__)
         self.filename = f"price_history_{fiat}_{asset}.json"
 
-    def save(
-        self,
-        price_history: deque,
-        check_interval: int,
-        alert_threshold: float
-    ):
+    def save_history(self, price_history: deque, config):
         """Save price history to file.
 
         Args:
             price_history: Deque of (timestamp, buy, sell) tuples
-            check_interval: Check interval in seconds
-            alert_threshold: Alert threshold percentage
+            config: Config object with settings
         """
         data = {
             "last_updated": datetime.now().isoformat(),
             "config": {
                 "asset": self.asset,
                 "fiat": self.fiat,
-                "check_interval": check_interval,
-                "alert_threshold": alert_threshold
+                "check_interval": config.check_interval,
+                "alert_threshold": config.alert_threshold
             },
             "history": [
                 {
