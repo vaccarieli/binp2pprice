@@ -19,11 +19,6 @@ from typing import Optional, Tuple, Dict, List
 from dataclasses import dataclass
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from urllib.parse import urlparse
-import re
 
 
 # Configuration
@@ -38,17 +33,6 @@ class Config:
     exclude_methods: List[str] = None
     min_amount: float = 0.0  # Minimum transaction amount in fiat currency
     
-    # Alerting
-    email_enabled: bool = False
-    email_smtp_host: str = ""
-    email_smtp_port: int = 587
-    email_from: str = ""
-    email_to: str = ""
-    email_password: str = ""
-    
-    webhook_enabled: bool = False
-    webhook_url: str = ""
-
     # Telegram alerting
     telegram_enabled: bool = False
     telegram_bot_token: str = ""
@@ -101,28 +85,6 @@ class Config:
             # Check for suspicious patterns
             if ".." in self.log_file or self.log_file.startswith("/etc") or self.log_file.startswith("C:\\Windows"):
                 raise ValueError("Invalid log file path")
-
-        # Validate webhook URL
-        if self.webhook_enabled and self.webhook_url:
-            try:
-                parsed = urlparse(self.webhook_url)
-                if parsed.scheme not in ["http", "https"]:
-                    raise ValueError("Webhook URL must use HTTP or HTTPS")
-                if not parsed.netloc:
-                    raise ValueError("Webhook URL must have a valid hostname")
-            except Exception as e:
-                raise ValueError(f"Invalid webhook URL: {e}")
-
-        # Validate email configuration
-        if self.email_enabled:
-            if not self.email_smtp_host or not self.email_from or not self.email_to:
-                raise ValueError("Email enabled but missing required configuration")
-            # Basic email validation
-            email_pattern = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
-            if not email_pattern.match(self.email_from):
-                raise ValueError(f"Invalid email_from address: {self.email_from}")
-            if not email_pattern.match(self.email_to):
-                raise ValueError(f"Invalid email_to address: {self.email_to}")
 
         # Validate Telegram configuration
         if self.telegram_enabled:
@@ -217,50 +179,6 @@ class AlertManager:
         self.config = config
         self.logger = logging.getLogger(__name__)
     
-    def send_email(self, subject: str, body: str) -> bool:
-        """Send email alert"""
-        if not self.config.email_enabled:
-            return False
-        
-        try:
-            msg = MIMEMultipart()
-            msg['From'] = self.config.email_from
-            msg['To'] = self.config.email_to
-            msg['Subject'] = subject
-            
-            msg.attach(MIMEText(body, 'plain'))
-            
-            with smtplib.SMTP(self.config.email_smtp_host, self.config.email_smtp_port) as server:
-                server.starttls()
-                server.login(self.config.email_from, self.config.email_password)
-                server.send_message(msg)
-            
-            self.logger.info("Email alert sent successfully")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Failed to send email: {e}")
-            return False
-    
-    def send_webhook(self, data: dict) -> bool:
-        """Send webhook alert (Slack/Discord/etc)"""
-        if not self.config.webhook_enabled:
-            return False
-
-        try:
-            response = requests.post(
-                self.config.webhook_url,
-                json=data,
-                timeout=5
-            )
-            response.raise_for_status()
-            self.logger.info("Webhook alert sent successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Failed to send webhook: {e}")
-            return False
-
     def send_telegram(self, message: str) -> Optional[int]:
         """Send Telegram message and return message_id"""
         if not self.config.telegram_enabled:
@@ -343,7 +261,7 @@ class AlertManager:
             return False
 
     def send_alert(self, alerts: List[str]):
-        """Send alerts through all enabled channels (Email/Webhook only, NOT Telegram)"""
+        """Send alerts through console logging (Telegram handled separately)"""
         if not alerts:
             return
 
@@ -352,21 +270,6 @@ class AlertManager:
 
         # Console
         self.logger.warning(f"ALERTS at {timestamp}:\n{alert_text}")
-
-        # Email
-        if self.config.email_enabled:
-            subject = f"Binance P2P Alert - {self.config.fiat}/{self.config.asset}"
-            body = f"Alert triggered at {timestamp}\n\n{alert_text}"
-            self.send_email(subject, body)
-
-        # Webhook
-        if self.config.webhook_enabled:
-            webhook_data = {
-                "text": f"Binance P2P Alert",
-                "timestamp": timestamp,
-                "alerts": alerts
-            }
-            self.send_webhook(webhook_data)
 
         # NOTE: Telegram alerts are handled separately by check_sudden_change_telegram()
         # which uses baseline reset logic to prevent spam
@@ -1395,9 +1298,7 @@ class PriceTracker:
             self.logger.info(f"Payment methods: {', '.join(self.config.payment_methods)}")
         if self.config.exclude_methods:
             self.logger.info(f"Excluding: {', '.join(self.config.exclude_methods)}")
-        
-        self.logger.info("Email alerts: " + ("ENABLED" if self.config.email_enabled else "DISABLED"))
-        self.logger.info("Webhook alerts: " + ("ENABLED" if self.config.webhook_enabled else "DISABLED"))
+
         if self.config.telegram_enabled:
             self.logger.info(f"Telegram alerts: ENABLED (regular: {self.config.telegram_regular_updates}, threshold: {self.config.telegram_sudden_change_threshold}%)")
         else:
@@ -1583,18 +1484,6 @@ Examples:
     parser.add_argument('--fiat', help='Fiat currency (default: VES)')
     parser.add_argument('--min-amount', '-m', type=float, help='Minimum transaction amount in fiat (e.g., 60000 for 60,000 VES)')
 
-    # Email alerts
-    parser.add_argument('--email-enabled', action='store_true', help='Enable email alerts')
-    parser.add_argument('--email-smtp-host', help='SMTP server host')
-    parser.add_argument('--email-smtp-port', type=int, help='SMTP server port')
-    parser.add_argument('--email-from', help='From email address')
-    parser.add_argument('--email-to', help='To email address')
-    parser.add_argument('--email-password', help='Email password')
-    
-    # Webhook alerts
-    parser.add_argument('--webhook-enabled', action='store_true', help='Enable webhook alerts')
-    parser.add_argument('--webhook-url', help='Webhook URL')
-    
     # Logging
     parser.add_argument('--log-file', help='Log file path')
     parser.add_argument('--log-level', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
@@ -1627,26 +1516,6 @@ Examples:
     if args.min_amount:
         config_dict['min_amount'] = args.min_amount
 
-    # Email config
-    if args.email_enabled:
-        config_dict['email_enabled'] = True
-    if args.email_smtp_host:
-        config_dict['email_smtp_host'] = args.email_smtp_host
-    if args.email_smtp_port:
-        config_dict['email_smtp_port'] = args.email_smtp_port
-    if args.email_from:
-        config_dict['email_from'] = args.email_from
-    if args.email_to:
-        config_dict['email_to'] = args.email_to
-    if args.email_password:
-        config_dict['email_password'] = args.email_password
-    
-    # Webhook config
-    if args.webhook_enabled:
-        config_dict['webhook_enabled'] = True
-    if args.webhook_url:
-        config_dict['webhook_url'] = args.webhook_url
-    
     # Logging config
     if args.log_file:
         config_dict['log_file'] = args.log_file
@@ -1664,14 +1533,7 @@ Examples:
     # Setup logging
     setup_logging(config)
     logger = logging.getLogger(__name__)
-    
-    # Validate email config
-    if config.email_enabled:
-        if not all([config.email_smtp_host, config.email_from, 
-                   config.email_to, config.email_password]):
-            logger.error("Email enabled but missing required config")
-            sys.exit(1)
-    
+
     # Create and run tracker
     tracker = PriceTracker(config)
     tracker.load_history()

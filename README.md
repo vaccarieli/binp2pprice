@@ -1,387 +1,224 @@
-# Binance P2P Price Tracker - Production Ready ✅
+# Binance P2P VES/USDT Price Tracker
 
-A robust, enterprise-ready price monitoring system for Binance P2P cryptocurrency markets with real-time alerts and comprehensive deployment options.
+Monitor Binance P2P prices for Venezuelan Bolívares (VES) with real-time Telegram alerts and BCV rate comparison.
 
-## Production Features
+## Features
 
-✅ **Robust Error Handling**
-- Automatic retries with exponential backoff
-- 429/418 rate limit detection and handling
-- Graceful shutdown (SIGINT/SIGTERM)
-- Validates all API responses
+✅ **Modern Telegram Alerts**
+- Beautiful formatted messages with visual indicators
+- Regular price updates every 15 seconds
+- Sudden price change alerts (configurable threshold)
+- Separate alerts for BUY and SELL with trader information
+- Bilingual support (Spanish/English)
 
-✅ **Multiple Alert Channels**
-- Console logging
-- Email (SMTP)
-- Webhooks (Slack/Discord/etc)
-- Telegram (with regular updates and sudden change alerts)
+✅ **BCV Integration**
+- Displays official Venezuelan exchange rate
+- Shows P2P premium percentage vs BCV
+- 1-hour caching to minimize API calls
 
-✅ **Production Monitoring**
-- Structured logging to file and console
-- Tracks consecutive failures
-- Health status indicators
-- Automatic history persistence
+✅ **Smart Alert System**
+- Tracks sudden price changes independently for BUY and SELL
+- Preserves opposite direction alerts (UP vs DOWN)
+- Captures trader info at the moment of change
+- No spam - intelligent baseline reset
 
-✅ **Safe Rate Limiting**
-- Conservative 30s default interval
-- Dynamic backoff on failures
-- Respects Retry-After headers
-
-## Documentation
-
-- **[QUICK_START.md](QUICK_START.md)** - Get started in 5 minutes
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Complete production deployment guide
-- **[PRODUCTION_CHECKLIST.md](PRODUCTION_CHECKLIST.md)** - Pre-deployment validation
-- **[TESTING.md](TESTING.md)** - Test results and verification
+✅ **Robust Monitoring**
+- Automatic retries with backoff
+- Rate limit handling
+- Historical data tracking
+- Graceful shutdown support
 
 ## Quick Start
 
-### Recommended: With Config File
+### 1. Install Dependencies
 ```bash
-# 1. Copy and edit config
-cp config.example.json config.json
-nano config.json
+pip install -r requirements.txt
+```
 
-# 2. Run (automatically loads config.json)
+### 2. Configure Telegram Bot
+
+**Create Bot:**
+1. Message [@BotFather](https://t.me/BotFather) on Telegram
+2. Send `/newbot` and follow instructions
+3. Save the bot token
+
+**Get Chat ID:**
+```bash
+python get_telegram_chat_id.py
+# Send a message to your bot, then check the output
+```
+
+### 3. Edit Configuration
+
+Copy and edit `config.json`:
+```json
+{
+  "asset": "USDT",
+  "fiat": "VES",
+  "check_interval": 15,
+  "payment_methods": ["Pago Movil"],
+  "min_amount": 60000,
+
+  "telegram_enabled": true,
+  "telegram_bot_token": "YOUR_BOT_TOKEN",
+  "telegram_chat_id": "YOUR_CHAT_ID",
+  "telegram_regular_updates": true,
+  "telegram_sudden_change_threshold": 5.0,
+  "telegram_language": "es"
+}
+```
+
+### 4. Run the Tracker
+```bash
 python price_tracker_prod.py
 ```
 
-### Alternative: CLI Only
-```bash
-# Without config file
-python price_tracker_prod.py -p "PagoMovil" -i 30 -t 2.0
-```
+## Configuration Options
 
-### Override Config Settings
-```bash
-# Uses config.json but overrides payment method
-python price_tracker_prod.py -p "Banesco"
-```
+### Core Settings
+- `check_interval`: Seconds between price checks (default: 15)
+- `payment_methods`: Filter by payment methods (e.g., "Pago Movil")
+- `min_amount`: Minimum transaction amount in VES
 
-## Configuration
-
-### Command Line Arguments
-```
-Required:
-  -p, --payment-methods    Payment methods to filter (e.g., "PagoMovil")
-
-Optional:
-  -i, --interval          Check interval in seconds (default: 30, min: 10)
-  -t, --threshold         Alert threshold % (default: 2.0)
-  -m, --min-amount        Minimum transaction amount in fiat (e.g., 60000)
-  --asset                 Crypto asset (default: USDT)
-  --fiat                  Fiat currency (default: VES)
-  -c, --config            Load from JSON config file
-  
-Email Alerts:
-  --email-enabled         Enable email alerts
-  --email-smtp-host       SMTP server (e.g., smtp.gmail.com)
-  --email-smtp-port       SMTP port (default: 587)
-  --email-from            Sender email
-  --email-to              Recipient email
-  --email-password        Email password (use app password for Gmail)
-
-Webhook Alerts:
-  --webhook-enabled       Enable webhook
-  --webhook-url           Webhook URL
-
-Telegram Alerts:
-  --telegram-enabled              Enable Telegram alerts
-  --telegram-bot-token            Bot token from BotFather
-  --telegram-chat-id              Your Telegram chat ID
-  --telegram-regular-updates      Send regular status updates (true/false)
-  --telegram-sudden-threshold     Percentage for sudden change alerts (default: 5.0)
-
-Logging:
-  --log-file             Log file path (default: price_tracker.log)
-  --log-level            DEBUG|INFO|WARNING|ERROR (default: INFO)
-```
-
-### Config File (JSON)
-See `config.example.json` for all available options.
-
-## Email Setup
-
-### Gmail
-1. Enable 2FA on your Google account
-2. Generate App Password: https://myaccount.google.com/apppasswords
-3. Use app password in config:
-```json
-{
-  "email_enabled": true,
-  "email_smtp_host": "smtp.gmail.com",
-  "email_smtp_port": 587,
-  "email_from": "your@gmail.com",
-  "email_to": "alert@gmail.com",
-  "email_password": "your_app_password"
-}
-```
-
-### Other Providers
-- **Outlook**: smtp-mail.outlook.com:587
-- **Yahoo**: smtp.mail.yahoo.com:587
-- **ProtonMail**: smtp.protonmail.com:587
-
-## Webhook Setup
-
-### Slack
-1. Create Incoming Webhook: https://api.slack.com/messaging/webhooks
-2. Add to config:
-```json
-{
-  "webhook_enabled": true,
-  "webhook_url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
-}
-```
-
-### Discord
-1. Server Settings → Integrations → Webhooks → New Webhook
-2. Copy URL and add to config
-
-## Telegram Setup
-
-### Quick Setup
-1. **Create a bot** with [@BotFather](https://t.me/BotFather):
-   - Send `/newbot` to BotFather
-   - Choose a name and username for your bot
-   - Save the bot token (e.g., `7413119427:AAECImETvOcwQEUTep776FXCdvYYIqukZ_s`)
-
-2. **Get your chat ID**:
-   ```bash
-   # Method 1: Using helper script
-   python get_telegram_chat_id.py
-   # Then send any message to your bot
-
-   # Method 2: Manual
-   # Send a message to your bot, then visit:
-   # https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates
-   # Look for "chat":{"id":123456789}
-   ```
-
-3. **Add to config.json**:
-   ```json
-   {
-     "telegram_enabled": true,
-     "telegram_bot_token": "7413119427:AAECImETvOcwQEUTep776FXCdvYYIqukZ_s",
-     "telegram_chat_id": "123456789",
-     "telegram_regular_updates": true,
-     "telegram_sudden_change_threshold": 5.0
-   }
-   ```
-
-### Telegram Features
-- **Regular Updates**: Status updates every 30 seconds (configurable via `telegram_regular_updates`)
-- **Sudden Change Alerts**: Immediate alerts when price moves ±5% (configurable via `telegram_sudden_change_threshold`)
-- **Rich Formatting**: Formatted messages with emojis for easy reading
-- **Separate Thresholds**: Different alert thresholds for general alerts vs sudden changes
-
-### Configuration Options
-- `telegram_enabled`: Enable/disable Telegram alerts (default: false)
+### Telegram Settings
+- `telegram_enabled`: Enable/disable Telegram alerts
 - `telegram_bot_token`: Your bot token from BotFather
-- `telegram_chat_id`: Your chat ID (get using helper script)
-- `telegram_regular_updates`: Send status updates every check interval (default: true)
-- `telegram_sudden_change_threshold`: Percentage change to trigger sudden alerts (default: 5.0)
+- `telegram_chat_id`: Your chat/group ID
+- `telegram_regular_updates`: Send periodic updates (true/false)
+- `telegram_sudden_change_threshold`: % change to trigger alerts (default: 5.0)
+- `telegram_language`: Message language - "es" (Spanish) or "en" (English)
 
-## Rate Limits
+### Alert Behavior
+- **Regular Updates**: Price status every check interval (edited message)
+- **Sudden Changes**: New alert when price moves ≥ threshold%
+- **Smart Deletion**: Only deletes previous alert if same direction (UP/UP or DOWN/DOWN)
+- **Trader Info**: Captures trader details at moment of price change
 
-**Recommended**: 30-60 seconds between requests
-- No official limit documented for P2P endpoint
-- Conservative approach avoids bans
-- Script enforces 10s minimum
+## Message Examples
 
-**Rate Limit Responses**:
-- 429: Temporary rate limit → automatic backoff
-- 418: IP ban → waits for Retry-After period
+### Regular Update (Spanish)
+```
+╔═══ 📊 Actualización de Precios P2P Binance ═══╗
+║ VES/USDT  •  ⏰ 11 Ene 2026, 07:35:34 PM
+╚══════════════════════════════════════╝
 
-## Monitoring
+┌─ 🏛️ Tasa Oficial BCV ─┐
+│ 330.38 VES
+└────────────────────┘
 
-### Log Files
-```bash
-# View logs in real-time
-tail -f price_tracker.log
+┏━━ 💵 Mejor COMPRA ━━┓
+┃ 522.50 VES  🟢 ↗️ 58.2% vs BCV
+┃
+┃ 👤 Trader_Name
+┃ 📦 3457 órdenes  •  💰 186.82 USDT
+┃ 💳 Banesco, Pago Movil
+┗══════════════════════════════════════┛
 
-# Check for errors
-grep ERROR price_tracker.log
+┏━━ 💰 Mejor VENTA ━━┓
+┃ 504.30 VES  🟢 ↗️ 52.6% vs BCV
+┃
+┃ 👤 Another_Trader
+┃ 📦 1990 órdenes  •  💰 1598.43 USDT
+┃ 💳 Pago Movil, Provincial
+┗══════════════════════════════════════┛
 
-# Check alerts
-grep ALERT price_tracker.log
+╔═ 📈 Cambios de Precio ═╗
+║
+║ 15m
+║  💵 🔴 ↘ -0.10%
+║  💰 🔴 ↘ -0.06%
+╚══════════════════════════════╝
 ```
 
-### History Files
-Price history saved as: `price_history_VES_USDT.json`
-- Auto-saves every 10 iterations
-- Loads last 24h on startup
-- Atomic writes prevent corruption
+### Sudden Change Alert
+```
+╔══════ ⚡ ¡ALERTA! ⚡ ══════╗
+║ VES/USDT  •  ⏰ 11 Ene 2026, 07:42:15 PM
+╚═════════════════════════════════════════════╝
+
+┏━━━━ 💰 VENTA 🔴 ↘️ ━━━━┓
+┃
+┃ ❄️ Cambio: 12.01%
+┃ 💱 578.50 → 509.00 VES
+┃
+┃ 👤 FlashTrader
+┃ 📦 1234 órdenes
+┃ 💰 45.00 USDT
+┗══════════════════════════════════════┛
+```
+
+## Timezone
+
+All timestamps are shown in Venezuela timezone (VET, UTC-4).
 
 ## Production Deployment
 
-### As Background Service (Linux)
-
-Create systemd service `/etc/systemd/system/p2p-tracker.service`:
-```ini
-[Unit]
-Description=Binance P2P Price Tracker
-After=network.target
-
-[Service]
-Type=simple
-User=youruser
-WorkingDirectory=/path/to/tracker
-ExecStart=/usr/bin/python3 /path/to/price_tracker_prod.py --config config.json
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
+### Run in tmux (Recommended)
 ```bash
-sudo systemctl enable p2p-tracker
-sudo systemctl start p2p-tracker
-sudo systemctl status p2p-tracker
+tmux new -s p2p_tracker
+python price_tracker_prod.py
+# Detach: Ctrl+B, then D
+# Reattach: tmux attach -t p2p_tracker
 ```
 
-### Docker (Optional)
-```dockerfile
-FROM python:3.11-slim
+## Logs
 
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-COPY price_tracker_prod.py config.json ./
-
-CMD ["python", "price_tracker_prod.py", "--config", "config.json"]
+View real-time logs:
+```bash
+tail -f price_tracker.log
 ```
+
+Check for errors:
+```bash
+grep ERROR price_tracker.log
+```
+
+## Files
+
+- `price_tracker_prod.py` - Main application
+- `config.json` - Your configuration
+- `config.example.json` - Configuration template
+- `requirements.txt` - Python dependencies
+- `get_telegram_chat_id.py` - Helper to get Telegram chat ID
+- `price_history_VES_USDT.json` - Historical price data (auto-generated)
+- `price_tracker.log` - Application logs (auto-generated)
+
+## Security
+
+Protect your configuration:
+```bash
+chmod 600 config.json
+```
+
+Never commit `config.json` to git (already in `.gitignore`).
 
 ## Troubleshooting
 
-### High Consecutive Failures
+### Telegram Not Working
+1. Verify bot token and chat ID are correct
+2. Ensure bot is added to your group (if using group chat)
+3. Check bot has permission to send messages
+4. If group was upgraded to supergroup, update chat ID (check logs for new ID)
+
+### Rate Limiting
+- Script automatically handles rate limits
+- If issues persist, increase `check_interval` in config
+
+### No Price Data
 - Check internet connection
 - Verify Binance P2P is accessible
-- Increase interval if rate limited
+- Review logs for API errors
 
-### No Alerts Triggering
-- Verify threshold is not too high
-- Check that enough time has passed (need 15m+ history)
-- Review alert configuration
+## Support
 
-### Email Not Sending
-- Verify SMTP credentials
-- Check firewall/antivirus blocking port 587
-- Test with telnet: `telnet smtp.gmail.com 587`
-
-### Rate Limited (429/418)
-- Script handles automatically
-- If persistent, increase interval
-- Check for other scripts/services using same IP
-
-## Performance
-
-- **Memory**: ~50MB typical
-- **CPU**: <1% average
-- **Disk**: ~1MB history per 24h
-- **Network**: ~1KB per request
-
-## Security Notes
-
-- Store credentials in config file with restricted permissions:
-  ```bash
-  chmod 600 config.json
-  ```
-- Use app passwords, not main passwords
-- Don't commit config files to git
-- Consider environment variables for sensitive data
-
-## Project Structure
-
-```
-p2p_tracker/
-├── price_tracker_prod.py      # Production-ready main script
-├── price_tracker.py            # Simple version for testing
-├── binance_p2p_ves.py         # One-time price checker
-├── config.example.json         # Configuration template
-├── requirements.txt            # Python dependencies
-├── .gitignore                 # Git ignore rules
-│
-├── README.md                   # This file
-├── QUICK_START.md             # 5-minute setup guide
-├── DEPLOYMENT.md              # Full deployment guide
-├── PRODUCTION_CHECKLIST.md    # Pre-deployment checklist
-│
-├── Dockerfile                 # Docker container
-├── docker-compose.yml         # Docker Compose config
-├── .dockerignore             # Docker ignore rules
-└── p2p-tracker.service       # Systemd service file
-```
-
-## Security Features
-
-✅ **Input Validation**
-- Configuration parameter validation
-- Path traversal protection
-- Email format validation
-- URL validation for webhooks
-- Secure file permissions
-
-✅ **Credential Protection**
-- Gitignore prevents accidental commits
-- Config file permission warnings
-- App password support
-- No secrets in logs
-
-✅ **Production Hardening**
-- Non-root user execution
-- Resource limits (systemd/Docker)
-- Automatic restart on failure
-- Health monitoring
-- Rate limit protection
-
-## What Makes This Production-Ready?
-
-1. **Comprehensive Error Handling**
-   - Automatic retry with exponential backoff
-   - Rate limit detection (429/418)
-   - Network timeout handling
-   - Graceful degradation
-
-2. **Enterprise Deployment Options**
-   - Systemd service (Linux)
-   - Docker containerization
-   - Windows Task Scheduler
-   - Cloud VPS ready
-
-3. **Monitoring & Observability**
-   - Structured logging (file + console)
-   - Health checks
-   - Performance metrics
-   - Alert tracking
-
-4. **Reliability**
-   - Atomic file writes
-   - History persistence
-   - Graceful shutdown (SIGINT/SIGTERM)
-   - Service auto-restart
-
-5. **Security**
-   - Input validation
-   - Secure defaults
-   - Credential protection
-   - Minimal privileges
+- Check logs: `price_tracker.log`
+- Review configuration: `config.json`
+- Test Telegram bot separately using `get_telegram_chat_id.py`
 
 ## License
 
 MIT - Use at your own risk. Not affiliated with Binance.
 
-## Support & Contributing
-
-- Report issues on GitHub
-- Check logs first: `price_tracker.log`
-- Review documentation before asking
-- Security issues: Report privately
-
 ## Disclaimer
 
 This software is for educational and informational purposes. Cryptocurrency trading involves risk. Always verify prices on official platforms before making decisions. Not financial advice.
-# binp2pprice
