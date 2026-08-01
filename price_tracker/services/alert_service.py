@@ -26,7 +26,8 @@ class AlertService:
     - Sending regular status updates
     - Logging alerts to persistent storage
     - Persisting Telegram message IDs so restarts keep editing
-      the same status message instead of creating duplicates
+      the same status + COMPRA/VENTA alert messages instead of
+      creating duplicates
     """
 
     def __init__(
@@ -290,8 +291,10 @@ class AlertService:
         """
         Send alert messages for sudden price changes.
 
-        Groups changes by type (BUY/SELL) and sends separate alert messages.
-        Deletes previous alert messages to keep chat clean.
+        Groups changes by type (BUY/SELL) and updates separate alert messages.
+        If a previous COMPRA or VENTA alert message still exists, it is edited
+        in place (no duplicate bubble). Only creates a new message when none
+        exists yet or the old one was deleted.
 
         Args:
             changes: List of change dictionaries with details
@@ -310,42 +313,68 @@ class AlertService:
             self._persist_state()
             return
 
-        # Send BUY alert if applicable
+        # COMPRA: edit existing alert message if known; else create once
         if buy_changes:
-            # Best-effort delete of previous BUY alert message
-            if self.last_buy_alert_message_id:
-                self.telegram_client.delete_message(self.last_buy_alert_message_id)
-                self.logger.debug(
-                    f"Deleted previous BUY alert message (ID: {self.last_buy_alert_message_id})"
-                )
-                self.last_buy_alert_message_id = None
-
             message = self.formatter.format_multi_alert(buy_changes, "BUY")
-            message_id = self.telegram_client.send_message(message)
+            self.last_buy_alert_message_id = self._upsert_telegram_message(
+                message_id=self.last_buy_alert_message_id,
+                text=message,
+                label="BUY alert",
+            )
 
-            if message_id:
-                self.last_buy_alert_message_id = message_id
-                self.logger.debug(f"Stored new BUY alert message (ID: {message_id})")
-
-        # Send SELL alert if applicable
+        # VENTA: edit existing alert message if known; else create once
         if sell_changes:
-            # Best-effort delete of previous SELL alert message
-            if self.last_sell_alert_message_id:
-                self.telegram_client.delete_message(self.last_sell_alert_message_id)
-                self.logger.debug(
-                    f"Deleted previous SELL alert message (ID: {self.last_sell_alert_message_id})"
-                )
-                self.last_sell_alert_message_id = None
-
             message = self.formatter.format_multi_alert(sell_changes, "SELL")
-            message_id = self.telegram_client.send_message(message)
-
-            if message_id:
-                self.last_sell_alert_message_id = message_id
-                self.logger.debug(f"Stored new SELL alert message (ID: {message_id})")
+            self.last_sell_alert_message_id = self._upsert_telegram_message(
+                message_id=self.last_sell_alert_message_id,
+                text=message,
+                label="SELL alert",
+            )
 
         # Persist baselines + alert message IDs after alert cycle
         self._persist_state()
+
+    def _upsert_telegram_message(
+        self,
+        message_id: Optional[int],
+        text: str,
+        label: str,
+    ) -> Optional[int]:
+        """Edit an existing Telegram message, or send a new one if needed.
+
+        Used so COMPRA/VENTA alerts reuse the same chat bubble when the
+        previous message still exists (including across process restarts).
+
+        Returns:
+            Message ID to keep tracking, or None if send failed.
+        """
+        if self.telegram_client is None:
+            return None
+
+        if message_id:
+            success, reason = self.telegram_client.edit_message_detailed(
+                message_id,
+                text,
+            )
+            if success:
+                self.logger.debug(
+                    "Updated existing %s message (ID: %s)", label, message_id
+                )
+                return message_id
+
+            self.logger.warning(
+                "Could not edit %s message id=%s (reason=%s); sending a new one",
+                label,
+                message_id,
+                reason,
+            )
+
+        new_id = self.telegram_client.send_message(text)
+        if new_id:
+            self.logger.info(
+                "Created new %s message (message_id: %s)", label, new_id
+            )
+        return new_id
 
     def send_regular_update(
         self,
