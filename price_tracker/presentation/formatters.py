@@ -1,18 +1,20 @@
 """
 Telegram message formatting for price updates and alerts.
 
-Card-style layout (readable on mobile) with:
-- Clear section frames so fields don't blend when Telegram wraps
-- Explicit BCV pairs: 1 USD / 1 EUR → VES
-- Copyable prices via <code>
-- Compact COMPRA/VENTA alerts with absolute delta + payment methods
+Card-style layout (readable on mobile). BCV currencies are rendered
+dynamically from BCVRates — any new currency from the API appears in:
+  - official rates block
+  - COMPRA / VENTA premium lines
+  - sudden-change alerts
+without hardcoding each code in the display layer.
 """
 
 from __future__ import annotations
 
 from html import escape
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from price_tracker.api.bcv import BCVRates, currency_emoji
 from price_tracker.presentation.translations import get_translation, format_timestamp
 
 
@@ -46,17 +48,12 @@ class TelegramFormatter:
         t_bcv = get_translation(lang, "bcv_official_rate")
         t_buy = get_translation(lang, "best_buy")
         t_sell = get_translation(lang, "best_sell")
-        t_vs_bcv = get_translation(lang, "vs_bcv")
         t_orders = get_translation(lang, "orders")
         t_spread = get_translation(lang, "spread")
         t_changes = get_translation(lang, "price_changes")
         t_no_offers = get_translation(lang, "no_offers")
 
-        usd_rate = None
-        if bcv_rates is not None and getattr(bcv_rates, "usd", None):
-            usd_rate = bcv_rates.usd
-        elif bcv_rate:
-            usd_rate = bcv_rate
+        rate_pairs = self._rate_pairs(bcv_rates, bcv_rate)
 
         # Header card
         msg = (
@@ -66,10 +63,10 @@ class TelegramFormatter:
             f"╚{'═' * 28}╝\n\n"
         )
 
-        # BCV — one currency per line (avoids mid-line wrap)
-        msg += self._format_bcv_block(fiat, bcv_rates, usd_rate, t_bcv)
+        # BCV — one currency per line, driven by rate_pairs
+        msg += self._format_bcv_block(fiat, rate_pairs, t_bcv)
 
-        # COMPRA / VENTA cards
+        # COMPRA / VENTA cards with premium vs every BCV currency
         msg += self._format_offer_card(
             side="buy",
             title=t_buy,
@@ -77,8 +74,7 @@ class TelegramFormatter:
             offer=best_buy_offer,
             fiat=fiat,
             asset=asset,
-            usd_rate=usd_rate,
-            t_vs_bcv=t_vs_bcv,
+            rate_pairs=rate_pairs,
             t_orders=t_orders,
             t_no_offers=t_no_offers,
         )
@@ -89,8 +85,7 @@ class TelegramFormatter:
             offer=best_sell_offer,
             fiat=fiat,
             asset=asset,
-            usd_rate=usd_rate,
-            t_vs_bcv=t_vs_bcv,
+            rate_pairs=rate_pairs,
             t_orders=t_orders,
             t_no_offers=t_no_offers,
         )
@@ -106,7 +101,7 @@ class TelegramFormatter:
                 f"╰{'─' * 22}╯\n\n"
             )
 
-        # Changes — each period is its own short block (no crammed one-liners)
+        # Changes — each period is its own short block
         if changes:
             msg += f"╔═ 📈 <b>{escape(t_changes)}</b> ═╗\n"
             for period in ("15m", "30m", "1h"):
@@ -126,15 +121,19 @@ class TelegramFormatter:
         alert_type: str,
         change_data: dict,
         timestamp: Optional[str] = None,
+        bcv_rates: Any = None,
     ) -> str:
         """Format a single sudden-change alert."""
-        return self.format_multi_alert([change_data], alert_type, timestamp)
+        return self.format_multi_alert(
+            [change_data], alert_type, timestamp, bcv_rates=bcv_rates
+        )
 
     def format_multi_alert(
         self,
         changes: list[dict],
         alert_type: str,
         timestamp: Optional[str] = None,
+        bcv_rates: Any = None,
     ) -> str:
         """Format COMPRA or VENTA alert(s) with card layout."""
         lang = self.config.telegram.language
@@ -150,11 +149,7 @@ class TelegramFormatter:
 
         side_label = t_buy if alert_type == "BUY" else t_sell
         side_icon = "💵" if alert_type == "BUY" else "💰"
-
-        primary = changes[0] if changes else {"change": 0.0}
-        change_pct = float(primary.get("change", 0.0))
-        trend = "🟢 ↗️" if change_pct > 0 else "🔴 ↘️"
-        sign = "+" if change_pct > 0 else ""
+        rate_pairs = self._rate_pairs(bcv_rates, None)
 
         msg = (
             f"╔══ ⚡ <b>{escape(t_alert)}</b> ⚡ ══╗\n"
@@ -182,6 +177,10 @@ class TelegramFormatter:
                 f"┃ Δ <code>{delta_sign}{delta:.2f}</code> {escape(fiat)}\n"
             )
 
+            # Premium vs every official BCV currency (auto)
+            for code, ref in rate_pairs:
+                msg += f"┃ {self._premium_line(new_price, ref, code)}\n"
+
             trader_info = change_data.get("trader_info") or {}
             if trader_info.get("trader"):
                 trader = escape(str(trader_info["trader"]))
@@ -206,30 +205,70 @@ class TelegramFormatter:
         return msg
 
     # ------------------------------------------------------------------
-    # Helpers
+    # Helpers — currency-agnostic
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _rate_pairs(
+        bcv_rates: Any,
+        fallback_primary: Optional[float],
+    ) -> List[Tuple[str, float]]:
+        """Normalize any BCVRates-like object into ordered (code, rate) pairs."""
+        pairs: List[Tuple[str, float]] = []
+
+        if isinstance(bcv_rates, BCVRates):
+            pairs = list(bcv_rates.items())
+        elif bcv_rates is not None:
+            # Duck-typing: object with items() or rates dict
+            if hasattr(bcv_rates, "items") and callable(bcv_rates.items):
+                try:
+                    raw = list(bcv_rates.items())
+                    if raw and isinstance(raw[0], tuple) and len(raw[0]) == 2:
+                        pairs = [
+                            (str(c).upper(), float(v))
+                            for c, v in raw
+                            if v is not None and float(v) > 0
+                        ]
+                except Exception:
+                    pairs = []
+            if not pairs and hasattr(bcv_rates, "rates"):
+                rates_dict = getattr(bcv_rates, "rates") or {}
+                pairs = [
+                    (str(c).upper(), float(v))
+                    for c, v in rates_dict.items()
+                    if v is not None and float(v) > 0
+                ]
+
+        if not pairs and fallback_primary and fallback_primary > 0:
+            pairs = [("USD", float(fallback_primary))]
+
+        # De-dupe while preserving order
+        seen = set()
+        ordered: List[Tuple[str, float]] = []
+        for code, rate in pairs:
+            code = code.upper()
+            if code in seen or rate <= 0:
+                continue
+            seen.add(code)
+            ordered.append((code, rate))
+        return ordered
 
     def _format_bcv_block(
         self,
         fiat: str,
-        bcv_rates: Any,
-        fallback_usd: Optional[float],
+        rate_pairs: Sequence[Tuple[str, float]],
         t_bcv: str,
     ) -> str:
-        usd = getattr(bcv_rates, "usd", None) if bcv_rates is not None else None
-        eur = getattr(bcv_rates, "eur", None) if bcv_rates is not None else None
-        if usd is None:
-            usd = fallback_usd
-
-        if not usd and not eur:
+        if not rate_pairs:
             return ""
 
-        # One rate per line — stays readable when Telegram wraps
         msg = f"┌─ 🏛️ <b>{escape(t_bcv)}</b> ─┐\n"
-        if usd:
-            msg += f"│ 💵 1 USD = <code>{usd:.2f}</code> {escape(fiat)}\n"
-        if eur:
-            msg += f"│ 💶 1 EUR = <code>{eur:.2f}</code> {escape(fiat)}\n"
+        for code, rate in rate_pairs:
+            emoji = currency_emoji(code)
+            msg += (
+                f"│ {emoji} 1 {escape(code)} = "
+                f"<code>{rate:.2f}</code> {escape(fiat)}\n"
+            )
         msg += f"└{'─' * 24}┘\n\n"
         return msg
 
@@ -241,8 +280,7 @@ class TelegramFormatter:
         offer: Optional[dict],
         fiat: str,
         asset: str,
-        usd_rate: Optional[float],
-        t_vs_bcv: str,
+        rate_pairs: Sequence[Tuple[str, float]],
         t_orders: str,
         t_no_offers: str,
     ) -> str:
@@ -268,15 +306,9 @@ class TelegramFormatter:
         # Price on its own line
         msg += f"┃ <code>{price:.2f}</code> {escape(fiat)}\n"
 
-        # Premium on its own line (prevents "vs BCV" orphan wrap)
-        if usd_rate and usd_rate > 0:
-            diff = ((price - usd_rate) / usd_rate) * 100.0
-            emoji = "🟢" if diff > 0 else "🔴"
-            arrow = "↗️" if diff > 0 else "↘️"
-            msg += (
-                f"┃ {emoji} {arrow} <b>{abs(diff):.1f}%</b> "
-                f"{escape(t_vs_bcv)}\n"
-            )
+        # Premium vs every official BCV currency (auto from rate_pairs)
+        for code, ref in rate_pairs:
+            msg += f"┃ {self._premium_line(price, ref, code)}\n"
 
         msg += (
             f"┃\n"
@@ -288,6 +320,19 @@ class TelegramFormatter:
             msg += f"┃ 💳 {methods}\n"
         msg += f"┗{'━' * 28}┛\n\n"
         return msg
+
+    @staticmethod
+    def _premium_line(price: float, ref_rate: float, currency: str) -> str:
+        """Format one premium line: 🟢 ↗️ 14.8% vs USD"""
+        if not ref_rate or ref_rate <= 0:
+            return f"⚪ n/a vs {escape(currency)}"
+        diff = ((price - ref_rate) / ref_rate) * 100.0
+        emoji = "🟢" if diff > 0 else "🔴"
+        arrow = "↗️" if diff > 0 else "↘️"
+        return (
+            f"{emoji} {arrow} <b>{abs(diff):.1f}%</b> "
+            f"vs {escape(currency)}"
+        )
 
     @staticmethod
     def _pct(value: float) -> str:

@@ -163,7 +163,8 @@ class AlertService:
         current_buy: float,
         current_sell: float,
         best_buy_offer: Optional[dict] = None,
-        best_sell_offer: Optional[dict] = None
+        best_sell_offer: Optional[dict] = None,
+        bcv_rates=None,
     ) -> None:
         """
         Check for sudden price changes and send alerts.
@@ -176,9 +177,11 @@ class AlertService:
             current_sell: Current best sell price
             best_buy_offer: Full offer details for buy price
             best_sell_offer: Full offer details for sell price
+            bcv_rates: Optional BCVRates for premium lines on alerts
         """
         sudden_changes = []
         baselines_changed = False
+        self._latest_bcv_rates = bcv_rates
 
         # Initialize baselines if not set
         if self.telegram_buy_baseline is None:
@@ -285,9 +288,9 @@ class AlertService:
 
         # Send alerts if any changes detected
         if sudden_changes:
-            self.send_alerts(sudden_changes)
+            self.send_alerts(sudden_changes, bcv_rates=bcv_rates)
 
-    def send_alerts(self, changes: List[dict]) -> None:
+    def send_alerts(self, changes: List[dict], bcv_rates=None) -> None:
         """
         Send alert messages for sudden price changes.
 
@@ -298,7 +301,11 @@ class AlertService:
 
         Args:
             changes: List of change dictionaries with details
+            bcv_rates: Optional BCVRates so alerts show premium vs all currencies
         """
+        if bcv_rates is None:
+            bcv_rates = getattr(self, "_latest_bcv_rates", None)
+
         # Group changes by type
         buy_changes = [c for c in changes if c['type'] == 'BUY']
         sell_changes = [c for c in changes if c['type'] == 'SELL']
@@ -315,7 +322,9 @@ class AlertService:
 
         # COMPRA: edit existing alert message if known; else create once
         if buy_changes:
-            message = self.formatter.format_multi_alert(buy_changes, "BUY")
+            message = self.formatter.format_multi_alert(
+                buy_changes, "BUY", bcv_rates=bcv_rates
+            )
             self.last_buy_alert_message_id = self._upsert_telegram_message(
                 message_id=self.last_buy_alert_message_id,
                 text=message,
@@ -324,7 +333,9 @@ class AlertService:
 
         # VENTA: edit existing alert message if known; else create once
         if sell_changes:
-            message = self.formatter.format_multi_alert(sell_changes, "SELL")
+            message = self.formatter.format_multi_alert(
+                sell_changes, "SELL", bcv_rates=bcv_rates
+            )
             self.last_sell_alert_message_id = self._upsert_telegram_message(
                 message_id=self.last_sell_alert_message_id,
                 text=message,
@@ -401,8 +412,8 @@ class AlertService:
             changes: Dictionary of price changes over time periods
             best_buy_offer: Full details of best buy offer
             best_sell_offer: Full details of best sell offer
-            bcv_rate: Optional BCV official USD rate (legacy / premium %)
-            bcv_rates: Optional BCVRates with USD/EUR
+            bcv_rate: Optional primary BCV rate (legacy)
+            bcv_rates: Optional BCVRates (dynamic currency map)
 
         Returns:
             Message ID of sent/edited message, or None if failed/disabled

@@ -189,21 +189,19 @@ class PriceService:
 
     def get_bcv_rate(self) -> Optional[float]:
         """
-        Get the current BCV official USD exchange rate (VES per 1 USD).
-
-        Used for P2P vs BCV premium % (USDT ≈ USD).
+        Get the primary BCV official rate (USD preferred).
 
         Returns:
-            BCV USD rate in VES, or None if unavailable
+            Primary BCV rate in VES, or None if unavailable
         """
         return self.bcv_client.get_rate()
 
     def get_bcv_rates(self):
         """
-        Get BCV official rates for USD / EUR (VES per unit).
+        Get all available BCV official rates (dynamic currency set).
 
         Returns:
-            BCVRates dataclass from the BCV client
+            BCVRates with rates map (code → VES per unit)
         """
         return self.bcv_client.get_rates()
 

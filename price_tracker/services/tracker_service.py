@@ -148,18 +148,19 @@ class TrackerService:
             if alerts:
                 self._log_alerts(alerts)
 
+            # Official BCV rates (dynamic currency set from API)
+            bcv_rates = self.price_service.get_bcv_rates()
+            bcv_rate = bcv_rates.primary if bcv_rates else None
+
             # Check for sudden changes (Telegram alerts)
             best_buy_offer, best_sell_offer = self.price_service.get_best_offers()
             self.alert_service.check_sudden_change(
                 buy_price,
                 sell_price,
                 best_buy_offer,
-                best_sell_offer
+                best_sell_offer,
+                bcv_rates=bcv_rates,
             )
-
-            # Get BCV rates (USD/EUR); USD used for P2P premium %
-            bcv_rates = self.price_service.get_bcv_rates()
-            bcv_rate = bcv_rates.usd if bcv_rates else None
 
             # Send regular Telegram update
             self.alert_service.send_regular_update(
