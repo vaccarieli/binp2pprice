@@ -9,6 +9,9 @@ config.json
 # Price history data
 price_history_*.json
 
+# Telegram runtime state (message IDs / baselines)
+telegram_state.json
+
 # Python
 __pycache__/
 *.py[cod]
