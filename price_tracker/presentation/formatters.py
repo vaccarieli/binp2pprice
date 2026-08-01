@@ -1,13 +1,18 @@
 """
 Telegram message formatting for price updates and alerts.
 
-This module handles all Telegram message formatting including:
-- Regular price updates with BCV rates
-- Sudden price change alerts
-- Modern Unicode box-drawing characters for visual appeal
+Card-style layout (readable on mobile) with:
+- Clear section frames so fields don't blend when Telegram wraps
+- Explicit BCV pairs: 1 USD / 1 EUR → VES
+- Copyable prices via <code>
+- Compact COMPRA/VENTA alerts with absolute delta + payment methods
 """
 
-from typing import Optional, Dict, Any
+from __future__ import annotations
+
+from html import escape
+from typing import Any, Dict, List, Optional
+
 from price_tracker.presentation.translations import get_translation, format_timestamp
 
 
@@ -15,13 +20,11 @@ class TelegramFormatter:
     """Formats Telegram messages for price updates and alerts."""
 
     def __init__(self, config: Any):
-        """
-        Initialize the Telegram formatter.
-
-        Args:
-            config: Configuration object with fiat, asset, and language settings
-        """
         self.config = config
+
+    # ------------------------------------------------------------------
+    # Public formatters
+    # ------------------------------------------------------------------
 
     def format_regular_update(
         self,
@@ -33,321 +36,263 @@ class TelegramFormatter:
         bcv_rate: Optional[float] = None,
         bcv_rates: Any = None,
     ) -> str:
-        """
-        Format a regular price update message for Telegram.
-
-        Args:
-            buy_price: Current best buy price, or None if no offers
-            sell_price: Current best sell price, or None if no offers
-            changes: Dictionary of price changes over time periods (15m, 30m, 1h)
-            best_buy_offer: Full offer details for best buy price
-            best_sell_offer: Full offer details for best sell price
-            bcv_rate: Optional BCV official USD rate (legacy)
-            bcv_rates: Optional BCVRates with USD/EUR
-
-        Returns:
-            Formatted HTML message string for Telegram
-        """
-        # Get translations
+        """Format the live status dashboard message."""
         lang = self.config.telegram.language
+        fiat = self.config.filters.fiat
+        asset = self.config.filters.asset
+        timestamp = format_timestamp(lang)
+
         t_price_update = get_translation(lang, "price_update")
-        t_bcv_rate = get_translation(lang, "bcv_official_rate")
-        t_best_buy = get_translation(lang, "best_buy")
-        t_best_sell = get_translation(lang, "best_sell")
+        t_bcv = get_translation(lang, "bcv_official_rate")
+        t_buy = get_translation(lang, "best_buy")
+        t_sell = get_translation(lang, "best_sell")
         t_vs_bcv = get_translation(lang, "vs_bcv")
         t_orders = get_translation(lang, "orders")
         t_spread = get_translation(lang, "spread")
-        t_price_changes = get_translation(lang, "price_changes")
+        t_changes = get_translation(lang, "price_changes")
         t_no_offers = get_translation(lang, "no_offers")
 
-        timestamp = format_timestamp(lang)
-        fiat = self.config.filters.fiat
-
-        # Resolve USD rate used for P2P premium % (USDT ≈ USD)
         usd_rate = None
         if bcv_rates is not None and getattr(bcv_rates, "usd", None):
             usd_rate = bcv_rates.usd
         elif bcv_rate:
             usd_rate = bcv_rate
 
-        # Header with modern design
-        msg = f"╔═══ 📊 <b>{t_price_update}</b> ═══╗\n"
-        msg += f"║ <b>{fiat}/{self.config.filters.asset}</b>  •  ⏰ {timestamp}\n"
-        msg += f"╚{'═' * 38}╝\n\n"
-
-        # BCV official rates — always label the foreign currency explicitly
-        bcv_block = self._format_bcv_rates_block(
-            t_bcv_rate=t_bcv_rate,
-            fiat=fiat,
-            bcv_rates=bcv_rates,
-            fallback_usd=usd_rate,
+        # Header card
+        msg = (
+            f"╔══ 📊 <b>{escape(t_price_update)}</b> ══╗\n"
+            f"║ <b>{escape(fiat)}/{escape(asset)}</b>\n"
+            f"║ ⏰ {escape(timestamp)}\n"
+            f"╚{'═' * 28}╝\n\n"
         )
-        if bcv_block:
-            msg += bcv_block
 
-        # BUY offer details with modern card layout
-        if buy_price is not None and best_buy_offer:
-            buy_adv = best_buy_offer.get("adv", {})
-            buy_advertiser = best_buy_offer.get("advertiser", {})
-            buy_trader = buy_advertiser.get("nickName", "Unknown")
-            buy_orders = buy_advertiser.get("monthOrderCount", 0)
-            buy_available = float(buy_adv.get("surplusAmount", 0))
-            buy_methods = ", ".join([
-                m.get("tradeMethodName", "")
-                for m in buy_adv.get("tradeMethods", [])[:2]
-                if m.get("tradeMethodName")
-            ])
+        # BCV — one currency per line (avoids mid-line wrap)
+        msg += self._format_bcv_block(fiat, bcv_rates, usd_rate, t_bcv)
 
-            msg += f"┏━━ 💵 <b>{t_best_buy}</b> ━━┓\n"
-            msg += f"┃ <b>{buy_price:.2f}</b> {fiat}"
+        # COMPRA / VENTA cards
+        msg += self._format_offer_card(
+            side="buy",
+            title=t_buy,
+            price=buy_price,
+            offer=best_buy_offer,
+            fiat=fiat,
+            asset=asset,
+            usd_rate=usd_rate,
+            t_vs_bcv=t_vs_bcv,
+            t_orders=t_orders,
+            t_no_offers=t_no_offers,
+        )
+        msg += self._format_offer_card(
+            side="sell",
+            title=t_sell,
+            price=sell_price,
+            offer=best_sell_offer,
+            fiat=fiat,
+            asset=asset,
+            usd_rate=usd_rate,
+            t_vs_bcv=t_vs_bcv,
+            t_orders=t_orders,
+            t_no_offers=t_no_offers,
+        )
 
-            # P2P premium vs official BCV USD (USDT ≈ USD)
-            if usd_rate and usd_rate > 0:
-                buy_diff = ((buy_price - usd_rate) / usd_rate) * 100
-                diff_emoji = "🟢" if buy_diff > 0 else "🔴"
-                arrow = "↗️" if buy_diff > 0 else "↘️"
-                msg += f"  {diff_emoji} <b>{arrow} {abs(buy_diff):.1f}%</b> {t_vs_bcv}"
-
-            msg += f"\n┃\n"
-            msg += f"┃ 👤 {buy_trader}\n"
-            msg += f"┃ 📦 {buy_orders} {t_orders}  •  💰 {buy_available:.2f} USDT\n"
-            msg += f"┃ 💳 {buy_methods}\n"
-            msg += f"┗{'━' * 38}┛\n\n"
-        else:
-            msg += f"┏━━ 💵 <b>{t_best_buy}</b> ━━┓\n"
-            msg += f"┃ {t_no_offers}\n"
-            msg += f"┗{'━' * 38}┛\n\n"
-
-        # SELL offer details with modern card layout
-        if sell_price is not None and best_sell_offer:
-            sell_adv = best_sell_offer.get("adv", {})
-            sell_advertiser = best_sell_offer.get("advertiser", {})
-            sell_trader = sell_advertiser.get("nickName", "Unknown")
-            sell_orders = sell_advertiser.get("monthOrderCount", 0)
-            sell_available = float(sell_adv.get("surplusAmount", 0))
-            sell_methods = ", ".join([
-                m.get("tradeMethodName", "")
-                for m in sell_adv.get("tradeMethods", [])[:2]
-                if m.get("tradeMethodName")
-            ])
-
-            msg += f"┏━━ 💰 <b>{t_best_sell}</b> ━━┓\n"
-            msg += f"┃ <b>{sell_price:.2f}</b> {fiat}"
-
-            if usd_rate and usd_rate > 0:
-                sell_diff = ((sell_price - usd_rate) / usd_rate) * 100
-                diff_emoji = "🟢" if sell_diff > 0 else "🔴"
-                arrow = "↗️" if sell_diff > 0 else "↘️"
-                msg += f"  {diff_emoji} <b>{arrow} {abs(sell_diff):.1f}%</b> {t_vs_bcv}"
-
-            msg += f"\n┃\n"
-            msg += f"┃ 👤 {sell_trader}\n"
-            msg += f"┃ 📦 {sell_orders} {t_orders}  •  💰 {sell_available:.2f} USDT\n"
-            msg += f"┃ 💳 {sell_methods}\n"
-            msg += f"┗{'━' * 38}┛\n\n"
-        else:
-            msg += f"┏━━ 💰 <b>{t_best_sell}</b> ━━┓\n"
-            msg += f"┃ {t_no_offers}\n"
-            msg += f"┗{'━' * 38}┛\n\n"
-
-        # Spread with modern formatting
-        if buy_price is not None and sell_price is not None:
+        # Spread card
+        if buy_price is not None and sell_price is not None and sell_price > 0:
             spread = buy_price - sell_price
-            spread_pct = ((buy_price/sell_price - 1) * 100)
-            msg += f"╭─ 📊 <b>{t_spread}</b> ─╮\n"
-            msg += f"│ <b>{spread:.2f}</b> {fiat}  •  <b>{spread_pct:.2f}%</b>\n"
-            msg += f"╰{'─' * 25}╯\n\n"
+            spread_pct = (buy_price / sell_price - 1.0) * 100.0
+            msg += (
+                f"╭─ 📏 <b>{escape(t_spread)}</b> ─╮\n"
+                f"│ <code>{spread:.2f}</code> {escape(fiat)}\n"
+                f"│ <b>{spread_pct:.2f}%</b>\n"
+                f"╰{'─' * 22}╯\n\n"
+            )
 
-        # Price changes with enhanced visuals
+        # Changes — each period is its own short block (no crammed one-liners)
         if changes:
-            msg += f"╔═ 📈 <b>{t_price_changes}</b> ═╗\n"
-            for period in ["15m", "30m", "1h"]:
-                if period in changes:
-                    data = changes[period]
+            msg += f"╔═ 📈 <b>{escape(t_changes)}</b> ═╗\n"
+            for period in ("15m", "30m", "1h"):
+                if period not in changes:
+                    continue
+                data = changes[period]
+                msg += f"║\n"
+                msg += f"║ <b>{period}</b>\n"
+                msg += f"║  💵 {self._pct(data['buy_change'])}\n"
+                msg += f"║  💰 {self._pct(data['sell_change'])}\n"
+            msg += f"╚{'═' * 24}╝"
 
-                    # Visual indicators for changes
-                    if data['buy_change'] > 0:
-                        buy_indicator = "🟢 ↗"
-                        buy_sign = "+"
-                    else:
-                        buy_indicator = "🔴 ↘"
-                        buy_sign = ""
-
-                    if data['sell_change'] > 0:
-                        sell_indicator = "🟢 ↗"
-                        sell_sign = "+"
-                    else:
-                        sell_indicator = "🔴 ↘"
-                        sell_sign = ""
-
-                    msg += f"║\n"
-                    msg += f"║ <b>{period}</b>\n"
-                    msg += f"║  💵 {buy_indicator} <b>{buy_sign}{data['buy_change']:.2f}%</b>\n"
-                    msg += f"║  💰 {sell_indicator} <b>{sell_sign}{data['sell_change']:.2f}%</b>\n"
-
-            msg += f"╚{'═' * 30}╝"
-
-        return msg
-
-    def _format_bcv_rates_block(
-        self,
-        t_bcv_rate: str,
-        fiat: str,
-        bcv_rates: Any,
-        fallback_usd: Optional[float],
-    ) -> str:
-        """Build the multi-currency BCV rates section with explicit pairs."""
-        usd = getattr(bcv_rates, "usd", None) if bcv_rates is not None else None
-        eur = getattr(bcv_rates, "eur", None) if bcv_rates is not None else None
-
-        if usd is None:
-            usd = fallback_usd
-
-        lines = []
-        if usd:
-            lines.append(f"│ 💵 <b>1 USD</b> = <b>{usd:.2f}</b> {fiat}")
-        if eur:
-            lines.append(f"│ 💶 <b>1 EUR</b> = <b>{eur:.2f}</b> {fiat}")
-
-        if not lines:
-            return ""
-
-        msg = f"┌─ 🏛️ <b>{t_bcv_rate}</b> ─┐\n"
-        msg += "\n".join(lines) + "\n"
-        msg += f"└{'─' * 28}┘\n\n"
         return msg
 
     def format_alert(
         self,
         alert_type: str,
         change_data: dict,
-        timestamp: Optional[str] = None
+        timestamp: Optional[str] = None,
     ) -> str:
-        """
-        Format a sudden price change alert message for Telegram.
-
-        Args:
-            alert_type: Either "BUY" or "SELL"
-            change_data: Dictionary containing:
-                - change: Percentage change (float)
-                - old_price: Previous price (float)
-                - new_price: Current price (float)
-                - trader_info: Optional dict with trader, orders, available, payment_methods
-            timestamp: Optional pre-formatted timestamp string (defaults to current time)
-
-        Returns:
-            Formatted HTML alert message string for Telegram
-        """
-        # Get translations
-        t_alert_title = get_translation(self.config.telegram.language, "alert_title")
-        t_change = get_translation(self.config.telegram.language, "change")
-        t_buy = get_translation(self.config.telegram.language, "buy")
-        t_sell = get_translation(self.config.telegram.language, "sell")
-        t_orders = get_translation(self.config.telegram.language, "orders")
-
-        if timestamp is None:
-            timestamp = format_timestamp(self.config.telegram.language)
-
-        # Modern alert header
-        msg = f"╔══════ ⚡ <b>{t_alert_title}</b> ⚡ ══════╗\n"
-        msg += f"║ <b>{self.config.filters.fiat}/{self.config.filters.asset}</b>  •  ⏰ {timestamp}\n"
-        msg += f"╚{'═' * 45}╝\n\n"
-
-        # Determine visual indicators
-        if change_data['change'] > 0:
-            trend_icon = "🟢 ↗️"
-            change_color = "🔥"
-        else:
-            trend_icon = "🔴 ↘️"
-            change_color = "❄️"
-
-        # Use appropriate icon for BUY vs SELL
-        if alert_type == "BUY":
-            type_icon = "💵"
-            type_label = t_buy
-        else:
-            type_icon = "💰"
-            type_label = t_sell
-
-        msg += f"┏━━━━ {type_icon} <b>{type_label}</b> {trend_icon} ━━━━┓\n"
-        msg += f"┃\n"
-        msg += f"┃ {change_color} <b>{t_change}:</b> <b>{abs(change_data['change']):.2f}%</b>\n"
-        msg += f"┃ 💱 <b>{change_data['old_price']:.2f}</b> → <b>{change_data['new_price']:.2f}</b> {self.config.filters.fiat}\n"
-
-        # Add trader info if available
-        if change_data.get('trader_info') and change_data['trader_info'].get('trader'):
-            trader_info = change_data['trader_info']
-            msg += f"┃\n"
-            msg += f"┃ 👤 <b>{trader_info['trader']}</b>\n"
-            msg += f"┃ 📦 {trader_info['orders']} {t_orders}\n"
-            msg += f"┃ 💰 {trader_info['available']:.2f} {self.config.filters.asset}\n"
-
-        msg += f"┗{'━' * 38}┛\n"
-
-        return msg
+        """Format a single sudden-change alert."""
+        return self.format_multi_alert([change_data], alert_type, timestamp)
 
     def format_multi_alert(
         self,
         changes: list[dict],
         alert_type: str,
-        timestamp: Optional[str] = None
+        timestamp: Optional[str] = None,
     ) -> str:
-        """
-        Format multiple price change alerts into a single message.
-
-        Args:
-            changes: List of change_data dictionaries
-            alert_type: Either "BUY" or "SELL"
-            timestamp: Optional pre-formatted timestamp string
-
-        Returns:
-            Formatted HTML alert message string for Telegram
-        """
-        # Get translations
-        t_alert_title = get_translation(self.config.telegram.language, "alert_title")
-        t_change = get_translation(self.config.telegram.language, "change")
-        t_buy = get_translation(self.config.telegram.language, "buy")
-        t_sell = get_translation(self.config.telegram.language, "sell")
-        t_orders = get_translation(self.config.telegram.language, "orders")
+        """Format COMPRA or VENTA alert(s) with card layout."""
+        lang = self.config.telegram.language
+        fiat = self.config.filters.fiat
+        asset = self.config.filters.asset
+        t_buy = get_translation(lang, "buy")
+        t_sell = get_translation(lang, "sell")
+        t_orders = get_translation(lang, "orders")
+        t_alert = get_translation(lang, "alert_title")
 
         if timestamp is None:
-            timestamp = format_timestamp(self.config.telegram.language)
+            timestamp = format_timestamp(lang)
 
-        # Modern alert header
-        msg = f"╔══════ ⚡ <b>{t_alert_title}</b> ⚡ ══════╗\n"
-        msg += f"║ <b>{self.config.filters.fiat}/{self.config.filters.asset}</b>  •  ⏰ {timestamp}\n"
-        msg += f"╚{'═' * 45}╝\n\n"
+        side_label = t_buy if alert_type == "BUY" else t_sell
+        side_icon = "💵" if alert_type == "BUY" else "💰"
+
+        primary = changes[0] if changes else {"change": 0.0}
+        change_pct = float(primary.get("change", 0.0))
+        trend = "🟢 ↗️" if change_pct > 0 else "🔴 ↘️"
+        sign = "+" if change_pct > 0 else ""
+
+        msg = (
+            f"╔══ ⚡ <b>{escape(t_alert)}</b> ⚡ ══╗\n"
+            f"║ <b>{escape(fiat)}/{escape(asset)}</b>\n"
+            f"║ ⏰ {escape(timestamp)}\n"
+            f"╚{'═' * 30}╝\n\n"
+        )
 
         for change_data in changes:
-            # Determine visual indicators
-            if change_data['change'] > 0:
-                trend_icon = "🟢 ↗️"
-                change_color = "🔥"
-            else:
-                trend_icon = "🔴 ↘️"
-                change_color = "❄️"
+            pct = float(change_data.get("change", 0.0))
+            old_price = float(change_data.get("old_price", 0.0))
+            new_price = float(change_data.get("new_price", 0.0))
+            delta = new_price - old_price
+            delta_sign = "+" if delta >= 0 else ""
+            heat = "🔥" if pct > 0 else "❄️"
+            local_trend = "🟢 ↗️" if pct > 0 else "🔴 ↘️"
+            local_sign = "+" if pct > 0 else ""
 
-            # Use appropriate icon for BUY vs SELL
-            if alert_type == "BUY":
-                type_icon = "💵"
-                type_label = t_buy
-            else:
-                type_icon = "💰"
-                type_label = t_sell
+            msg += (
+                f"┏━ {side_icon} <b>{escape(side_label)}</b> {local_trend} ━┓\n"
+                f"┃\n"
+                f"┃ {heat} <b>{local_sign}{pct:.2f}%</b>\n"
+                f"┃ 💱 <code>{old_price:.2f}</code> → <code>{new_price:.2f}</code>\n"
+                f"┃    {escape(fiat)}\n"
+                f"┃ Δ <code>{delta_sign}{delta:.2f}</code> {escape(fiat)}\n"
+            )
 
-            msg += f"┏━━━━ {type_icon} <b>{type_label}</b> {trend_icon} ━━━━┓\n"
-            msg += f"┃\n"
-            msg += f"┃ {change_color} <b>{t_change}:</b> <b>{abs(change_data['change']):.2f}%</b>\n"
-            msg += f"┃ 💱 <b>{change_data['old_price']:.2f}</b> → <b>{change_data['new_price']:.2f}</b> {self.config.filters.fiat}\n"
+            trader_info = change_data.get("trader_info") or {}
+            if trader_info.get("trader"):
+                trader = escape(str(trader_info["trader"]))
+                orders = trader_info.get("orders", 0)
+                available = float(trader_info.get("available", 0) or 0)
+                methods = trader_info.get("payment_methods") or []
+                methods_txt = ", ".join(
+                    escape(str(m)) for m in methods[:3] if m
+                )
 
-            # Add trader info if available
-            if change_data.get('trader_info') and change_data['trader_info'].get('trader'):
-                trader_info = change_data['trader_info']
-                msg += f"┃\n"
-                msg += f"┃ 👤 <b>{trader_info['trader']}</b>\n"
-                msg += f"┃ 📦 {trader_info['orders']} {t_orders}\n"
-                msg += f"┃ 💰 {trader_info['available']:.2f} {self.config.filters.asset}\n"
+                msg += (
+                    f"┃\n"
+                    f"┃ 👤 <b>{trader}</b>\n"
+                    f"┃ 📦 {orders} {escape(t_orders)}\n"
+                    f"┃ 💰 <code>{available:.2f}</code> {escape(asset)}\n"
+                )
+                if methods_txt:
+                    msg += f"┃ 💳 {methods_txt}\n"
 
-            msg += f"┗{'━' * 38}┛\n"
+            msg += f"┗{'━' * 28}┛\n"
 
         return msg
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _format_bcv_block(
+        self,
+        fiat: str,
+        bcv_rates: Any,
+        fallback_usd: Optional[float],
+        t_bcv: str,
+    ) -> str:
+        usd = getattr(bcv_rates, "usd", None) if bcv_rates is not None else None
+        eur = getattr(bcv_rates, "eur", None) if bcv_rates is not None else None
+        if usd is None:
+            usd = fallback_usd
+
+        if not usd and not eur:
+            return ""
+
+        # One rate per line — stays readable when Telegram wraps
+        msg = f"┌─ 🏛️ <b>{escape(t_bcv)}</b> ─┐\n"
+        if usd:
+            msg += f"│ 💵 1 USD = <code>{usd:.2f}</code> {escape(fiat)}\n"
+        if eur:
+            msg += f"│ 💶 1 EUR = <code>{eur:.2f}</code> {escape(fiat)}\n"
+        msg += f"└{'─' * 24}┘\n\n"
+        return msg
+
+    def _format_offer_card(
+        self,
+        side: str,
+        title: str,
+        price: Optional[float],
+        offer: Optional[dict],
+        fiat: str,
+        asset: str,
+        usd_rate: Optional[float],
+        t_vs_bcv: str,
+        t_orders: str,
+        t_no_offers: str,
+    ) -> str:
+        icon = "💵" if side == "buy" else "💰"
+        msg = f"┏━━ {icon} <b>{escape(title)}</b> ━━┓\n"
+
+        if price is None or not offer:
+            msg += f"┃ {escape(t_no_offers)}\n"
+            msg += f"┗{'━' * 28}┛\n\n"
+            return msg
+
+        adv = offer.get("adv", {}) or {}
+        advertiser = offer.get("advertiser", {}) or {}
+        trader = escape(str(advertiser.get("nickName", "Unknown")))
+        orders = advertiser.get("monthOrderCount", 0)
+        available = float(adv.get("surplusAmount", 0) or 0)
+        methods = ", ".join(
+            escape(str(m.get("tradeMethodName", "")))
+            for m in (adv.get("tradeMethods") or [])[:2]
+            if m and m.get("tradeMethodName")
+        )
+
+        # Price on its own line
+        msg += f"┃ <code>{price:.2f}</code> {escape(fiat)}\n"
+
+        # Premium on its own line (prevents "vs BCV" orphan wrap)
+        if usd_rate and usd_rate > 0:
+            diff = ((price - usd_rate) / usd_rate) * 100.0
+            emoji = "🟢" if diff > 0 else "🔴"
+            arrow = "↗️" if diff > 0 else "↘️"
+            msg += (
+                f"┃ {emoji} {arrow} <b>{abs(diff):.1f}%</b> "
+                f"{escape(t_vs_bcv)}\n"
+            )
+
+        msg += (
+            f"┃\n"
+            f"┃ 👤 {trader}\n"
+            f"┃ 📦 {orders} {escape(t_orders)}\n"
+            f"┃ 💰 <code>{available:.2f}</code> {escape(asset)}\n"
+        )
+        if methods:
+            msg += f"┃ 💳 {methods}\n"
+        msg += f"┗{'━' * 28}┛\n\n"
+        return msg
+
+    @staticmethod
+    def _pct(value: float) -> str:
+        if value > 0:
+            return f"🟢 ↗ <b>+{value:.2f}%</b>"
+        if value < 0:
+            return f"🔴 ↘ <b>{value:.2f}%</b>"
+        return f"<b>{value:.2f}%</b>"
