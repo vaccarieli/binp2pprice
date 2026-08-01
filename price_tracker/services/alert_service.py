@@ -354,7 +354,8 @@ class AlertService:
         changes: Dict[str, dict],
         best_buy_offer: Optional[dict],
         best_sell_offer: Optional[dict],
-        bcv_rate: Optional[float] = None
+        bcv_rate: Optional[float] = None,
+        bcv_rates=None,
     ) -> Optional[int]:
         """
         Send or edit regular status update via Telegram.
@@ -371,7 +372,8 @@ class AlertService:
             changes: Dictionary of price changes over time periods
             best_buy_offer: Full details of best buy offer
             best_sell_offer: Full details of best sell offer
-            bcv_rate: Optional BCV official rate
+            bcv_rate: Optional BCV official USD rate (legacy / premium %)
+            bcv_rates: Optional BCVRates with USD/EUR/GBP
 
         Returns:
             Message ID of sent/edited message, or None if failed/disabled
@@ -386,7 +388,8 @@ class AlertService:
             changes=changes,
             best_buy_offer=best_buy_offer,
             best_sell_offer=best_sell_offer,
-            bcv_rate=bcv_rate
+            bcv_rate=bcv_rate,
+            bcv_rates=bcv_rates,
         )
 
         # Prefer editing the known status message (survives restarts via state file)

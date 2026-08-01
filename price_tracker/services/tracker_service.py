@@ -157,8 +157,9 @@ class TrackerService:
                 best_sell_offer
             )
 
-            # Get BCV rate
-            bcv_rate = self.price_service.get_bcv_rate()
+            # Get BCV rates (USD/EUR/GBP); USD used for P2P premium %
+            bcv_rates = self.price_service.get_bcv_rates()
+            bcv_rate = bcv_rates.usd if bcv_rates else None
 
             # Send regular Telegram update
             self.alert_service.send_regular_update(
@@ -167,7 +168,8 @@ class TrackerService:
                 changes,
                 best_buy_offer,
                 best_sell_offer,
-                bcv_rate
+                bcv_rate,
+                bcv_rates=bcv_rates,
             )
 
             # Save history periodically

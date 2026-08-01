@@ -30,7 +30,8 @@ class TelegramFormatter:
         changes: Dict[str, dict],
         best_buy_offer: Optional[dict],
         best_sell_offer: Optional[dict],
-        bcv_rate: Optional[float] = None
+        bcv_rate: Optional[float] = None,
+        bcv_rates: Any = None,
     ) -> str:
         """
         Format a regular price update message for Telegram.
@@ -41,34 +42,50 @@ class TelegramFormatter:
             changes: Dictionary of price changes over time periods (15m, 30m, 1h)
             best_buy_offer: Full offer details for best buy price
             best_sell_offer: Full offer details for best sell price
-            bcv_rate: Optional BCV official exchange rate
+            bcv_rate: Optional BCV official USD rate (legacy)
+            bcv_rates: Optional BCVRates with USD/EUR/GBP
 
         Returns:
             Formatted HTML message string for Telegram
         """
         # Get translations
-        t_price_update = get_translation(self.config.telegram.language, "price_update")
-        t_bcv_rate = get_translation(self.config.telegram.language, "bcv_official_rate")
-        t_best_buy = get_translation(self.config.telegram.language, "best_buy")
-        t_best_sell = get_translation(self.config.telegram.language, "best_sell")
-        t_vs_bcv = get_translation(self.config.telegram.language, "vs_bcv")
-        t_orders = get_translation(self.config.telegram.language, "orders")
-        t_spread = get_translation(self.config.telegram.language, "spread")
-        t_price_changes = get_translation(self.config.telegram.language, "price_changes")
-        t_no_offers = get_translation(self.config.telegram.language, "no_offers")
+        lang = self.config.telegram.language
+        t_price_update = get_translation(lang, "price_update")
+        t_bcv_rate = get_translation(lang, "bcv_official_rate")
+        t_best_buy = get_translation(lang, "best_buy")
+        t_best_sell = get_translation(lang, "best_sell")
+        t_vs_bcv = get_translation(lang, "vs_bcv")
+        t_orders = get_translation(lang, "orders")
+        t_spread = get_translation(lang, "spread")
+        t_price_changes = get_translation(lang, "price_changes")
+        t_no_offers = get_translation(lang, "no_offers")
+        t_gbp_note = get_translation(lang, "gbp_derived_note")
 
-        timestamp = format_timestamp(self.config.telegram.language)
+        timestamp = format_timestamp(lang)
+        fiat = self.config.filters.fiat
+
+        # Resolve USD rate used for P2P premium % (USDT ≈ USD)
+        usd_rate = None
+        if bcv_rates is not None and getattr(bcv_rates, "usd", None):
+            usd_rate = bcv_rates.usd
+        elif bcv_rate:
+            usd_rate = bcv_rate
 
         # Header with modern design
         msg = f"╔═══ 📊 <b>{t_price_update}</b> ═══╗\n"
-        msg += f"║ <b>{self.config.filters.fiat}/{self.config.filters.asset}</b>  •  ⏰ {timestamp}\n"
+        msg += f"║ <b>{fiat}/{self.config.filters.asset}</b>  •  ⏰ {timestamp}\n"
         msg += f"╚{'═' * 38}╝\n\n"
 
-        # BCV Official Rate with prominent display
-        if bcv_rate:
-            msg += f"┌─ 🏛️ <b>{t_bcv_rate}</b> ─┐\n"
-            msg += f"│ <b>{bcv_rate:.2f} {self.config.filters.fiat}</b>\n"
-            msg += f"└{'─' * 20}┘\n\n"
+        # BCV official rates — always label the foreign currency explicitly
+        bcv_block = self._format_bcv_rates_block(
+            t_bcv_rate=t_bcv_rate,
+            fiat=fiat,
+            bcv_rates=bcv_rates,
+            fallback_usd=usd_rate,
+            gbp_note=t_gbp_note,
+        )
+        if bcv_block:
+            msg += bcv_block
 
         # BUY offer details with modern card layout
         if buy_price is not None and best_buy_offer:
@@ -84,11 +101,11 @@ class TelegramFormatter:
             ])
 
             msg += f"┏━━ 💵 <b>{t_best_buy}</b> ━━┓\n"
-            msg += f"┃ <b>{buy_price:.2f}</b> {self.config.filters.fiat}"
+            msg += f"┃ <b>{buy_price:.2f}</b> {fiat}"
 
-            # Add BCV difference
-            if bcv_rate and bcv_rate > 0:
-                buy_diff = ((buy_price - bcv_rate) / bcv_rate) * 100
+            # P2P premium vs official BCV USD (USDT ≈ USD)
+            if usd_rate and usd_rate > 0:
+                buy_diff = ((buy_price - usd_rate) / usd_rate) * 100
                 diff_emoji = "🟢" if buy_diff > 0 else "🔴"
                 arrow = "↗️" if buy_diff > 0 else "↘️"
                 msg += f"  {diff_emoji} <b>{arrow} {abs(buy_diff):.1f}%</b> {t_vs_bcv}"
@@ -117,11 +134,10 @@ class TelegramFormatter:
             ])
 
             msg += f"┏━━ 💰 <b>{t_best_sell}</b> ━━┓\n"
-            msg += f"┃ <b>{sell_price:.2f}</b> {self.config.filters.fiat}"
+            msg += f"┃ <b>{sell_price:.2f}</b> {fiat}"
 
-            # Add BCV difference
-            if bcv_rate and bcv_rate > 0:
-                sell_diff = ((sell_price - bcv_rate) / bcv_rate) * 100
+            if usd_rate and usd_rate > 0:
+                sell_diff = ((sell_price - usd_rate) / usd_rate) * 100
                 diff_emoji = "🟢" if sell_diff > 0 else "🔴"
                 arrow = "↗️" if sell_diff > 0 else "↘️"
                 msg += f"  {diff_emoji} <b>{arrow} {abs(sell_diff):.1f}%</b> {t_vs_bcv}"
@@ -141,7 +157,7 @@ class TelegramFormatter:
             spread = buy_price - sell_price
             spread_pct = ((buy_price/sell_price - 1) * 100)
             msg += f"╭─ 📊 <b>{t_spread}</b> ─╮\n"
-            msg += f"│ <b>{spread:.2f}</b> {self.config.filters.fiat}  •  <b>{spread_pct:.2f}%</b>\n"
+            msg += f"│ <b>{spread:.2f}</b> {fiat}  •  <b>{spread_pct:.2f}%</b>\n"
             msg += f"╰{'─' * 25}╯\n\n"
 
         # Price changes with enhanced visuals
@@ -173,6 +189,42 @@ class TelegramFormatter:
 
             msg += f"╚{'═' * 30}╝"
 
+        return msg
+
+    def _format_bcv_rates_block(
+        self,
+        t_bcv_rate: str,
+        fiat: str,
+        bcv_rates: Any,
+        fallback_usd: Optional[float],
+        gbp_note: str,
+    ) -> str:
+        """Build the multi-currency BCV rates section with explicit pairs."""
+        usd = getattr(bcv_rates, "usd", None) if bcv_rates is not None else None
+        eur = getattr(bcv_rates, "eur", None) if bcv_rates is not None else None
+        gbp = getattr(bcv_rates, "gbp", None) if bcv_rates is not None else None
+        gbp_derived = bool(getattr(bcv_rates, "gbp_derived", False)) if bcv_rates else False
+
+        if usd is None:
+            usd = fallback_usd
+
+        lines = []
+        if usd:
+            lines.append(f"│ 💵 <b>1 USD</b> = <b>{usd:.2f}</b> {fiat}")
+        if eur:
+            lines.append(f"│ 💶 <b>1 EUR</b> = <b>{eur:.2f}</b> {fiat}")
+        if gbp:
+            suffix = " *" if gbp_derived else ""
+            lines.append(f"│ 💷 <b>1 GBP</b> = <b>{gbp:.2f}</b> {fiat}{suffix}")
+
+        if not lines:
+            return ""
+
+        msg = f"┌─ 🏛️ <b>{t_bcv_rate}</b> ─┐\n"
+        msg += "\n".join(lines) + "\n"
+        if gbp and gbp_derived:
+            msg += f"│ <i>* {gbp_note}</i>\n"
+        msg += f"└{'─' * 28}┘\n\n"
         return msg
 
     def format_alert(

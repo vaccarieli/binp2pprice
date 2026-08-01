@@ -12,12 +12,12 @@ from zoneinfo import ZoneInfo
 TRANSLATIONS = {
     "en": {
         "price_update": "Binance P2P Price Update",
-        "bcv_official_rate": "BCV Official Rate",
+        "bcv_official_rate": "BCV Official Rates",
         "best_buy": "Best BUY",
         "best_sell": "Best SELL",
         "buy": "BUY",
         "sell": "SELL",
-        "vs_bcv": "vs BCV",
+        "vs_bcv": "vs BCV USD",
         "trader": "Trader",
         "available": "Available",
         "payment": "Payment",
@@ -29,15 +29,16 @@ TRANSLATIONS = {
         "change": "Change",
         "up": "UP",
         "down": "DOWN",
+        "gbp_derived_note": "GBP via BCV USD × market cross",
     },
     "es": {
         "price_update": "Actualización de Precios P2P Binance",
-        "bcv_official_rate": "Tasa Oficial BCV",
+        "bcv_official_rate": "Tasas Oficiales BCV",
         "best_buy": "Mejor COMPRA",
         "best_sell": "Mejor VENTA",
         "buy": "COMPRA",
         "sell": "VENTA",
-        "vs_bcv": "vs BCV",
+        "vs_bcv": "vs BCV USD",
         "trader": "Comerciante",
         "available": "Disponible",
         "payment": "Pago",
@@ -49,6 +50,7 @@ TRANSLATIONS = {
         "change": "Cambio",
         "up": "SUBIÓ",
         "down": "BAJÓ",
+        "gbp_derived_note": "GBP vía BCV USD × cruce de mercado",
     }
 }
 
