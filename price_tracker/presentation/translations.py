@@ -29,7 +29,6 @@ TRANSLATIONS = {
         "change": "Change",
         "up": "UP",
         "down": "DOWN",
-        "gbp_derived_note": "GBP via BCV USD × market cross",
     },
     "es": {
         "price_update": "Actualización de Precios P2P Binance",
@@ -50,7 +49,6 @@ TRANSLATIONS = {
         "change": "Cambio",
         "up": "SUBIÓ",
         "down": "BAJÓ",
-        "gbp_derived_note": "GBP vía BCV USD × cruce de mercado",
     }
 }
 

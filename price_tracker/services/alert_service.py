@@ -373,7 +373,7 @@ class AlertService:
             best_buy_offer: Full details of best buy offer
             best_sell_offer: Full details of best sell offer
             bcv_rate: Optional BCV official USD rate (legacy / premium %)
-            bcv_rates: Optional BCVRates with USD/EUR/GBP
+            bcv_rates: Optional BCVRates with USD/EUR
 
         Returns:
             Message ID of sent/edited message, or None if failed/disabled

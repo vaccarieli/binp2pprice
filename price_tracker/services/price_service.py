@@ -200,7 +200,7 @@ class PriceService:
 
     def get_bcv_rates(self):
         """
-        Get BCV official rates for USD / EUR / GBP (VES per unit).
+        Get BCV official rates for USD / EUR (VES per unit).
 
         Returns:
             BCVRates dataclass from the BCV client

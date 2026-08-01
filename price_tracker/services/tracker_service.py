@@ -157,7 +157,7 @@ class TrackerService:
                 best_sell_offer
             )
 
-            # Get BCV rates (USD/EUR/GBP); USD used for P2P premium %
+            # Get BCV rates (USD/EUR); USD used for P2P premium %
             bcv_rates = self.price_service.get_bcv_rates()
             bcv_rate = bcv_rates.usd if bcv_rates else None
 

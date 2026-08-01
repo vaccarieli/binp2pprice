@@ -43,7 +43,7 @@ class TelegramFormatter:
             best_buy_offer: Full offer details for best buy price
             best_sell_offer: Full offer details for best sell price
             bcv_rate: Optional BCV official USD rate (legacy)
-            bcv_rates: Optional BCVRates with USD/EUR/GBP
+            bcv_rates: Optional BCVRates with USD/EUR
 
         Returns:
             Formatted HTML message string for Telegram
@@ -59,7 +59,6 @@ class TelegramFormatter:
         t_spread = get_translation(lang, "spread")
         t_price_changes = get_translation(lang, "price_changes")
         t_no_offers = get_translation(lang, "no_offers")
-        t_gbp_note = get_translation(lang, "gbp_derived_note")
 
         timestamp = format_timestamp(lang)
         fiat = self.config.filters.fiat
@@ -82,7 +81,6 @@ class TelegramFormatter:
             fiat=fiat,
             bcv_rates=bcv_rates,
             fallback_usd=usd_rate,
-            gbp_note=t_gbp_note,
         )
         if bcv_block:
             msg += bcv_block
@@ -197,13 +195,10 @@ class TelegramFormatter:
         fiat: str,
         bcv_rates: Any,
         fallback_usd: Optional[float],
-        gbp_note: str,
     ) -> str:
         """Build the multi-currency BCV rates section with explicit pairs."""
         usd = getattr(bcv_rates, "usd", None) if bcv_rates is not None else None
         eur = getattr(bcv_rates, "eur", None) if bcv_rates is not None else None
-        gbp = getattr(bcv_rates, "gbp", None) if bcv_rates is not None else None
-        gbp_derived = bool(getattr(bcv_rates, "gbp_derived", False)) if bcv_rates else False
 
         if usd is None:
             usd = fallback_usd
@@ -213,17 +208,12 @@ class TelegramFormatter:
             lines.append(f"│ 💵 <b>1 USD</b> = <b>{usd:.2f}</b> {fiat}")
         if eur:
             lines.append(f"│ 💶 <b>1 EUR</b> = <b>{eur:.2f}</b> {fiat}")
-        if gbp:
-            suffix = " *" if gbp_derived else ""
-            lines.append(f"│ 💷 <b>1 GBP</b> = <b>{gbp:.2f}</b> {fiat}{suffix}")
 
         if not lines:
             return ""
 
         msg = f"┌─ 🏛️ <b>{t_bcv_rate}</b> ─┐\n"
         msg += "\n".join(lines) + "\n"
-        if gbp and gbp_derived:
-            msg += f"│ <i>* {gbp_note}</i>\n"
         msg += f"└{'─' * 28}┘\n\n"
         return msg
 
