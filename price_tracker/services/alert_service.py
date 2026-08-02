@@ -351,21 +351,23 @@ class AlertService:
         text: str,
         label: str,
     ) -> Optional[int]:
-        """Edit an existing Telegram message, or send a new one if needed.
+        """Edit an existing Telegram message, or send a new one only if gone.
 
-        Used so COMPRA/VENTA alerts reuse the same chat bubble when the
-        previous message still exists (including across process restarts).
+        Critical anti-duplication rules:
+          - Transient/network/timeout errors → keep the same message_id,
+            do NOT send a new bubble (that was contaminating the chat).
+          - not_found (message deleted) → create one new message and track it.
+          - No prior id → create once.
 
         Returns:
-            Message ID to keep tracking, or None if send failed.
+            Message ID to keep tracking (may be the old one on transient fail).
         """
         if self.telegram_client is None:
             return None
 
         if message_id:
-            success, reason = self.telegram_client.edit_message_detailed(
-                message_id,
-                text,
+            success, reason = self.telegram_client.edit_with_retries(
+                message_id, text
             )
             if success:
                 self.logger.debug(
@@ -373,19 +375,44 @@ class AlertService:
                 )
                 return message_id
 
-            self.logger.warning(
-                "Could not edit %s message id=%s (reason=%s); sending a new one",
-                label,
-                message_id,
-                reason,
-            )
+            # Message still exists but edit failed temporarily / for content reasons
+            if reason in (
+                self.telegram_client.REASON_TRANSIENT,
+                self.telegram_client.REASON_ERROR,
+            ):
+                self.logger.warning(
+                    "Could not edit %s message id=%s (reason=%s); "
+                    "keeping same id — will NOT create a duplicate",
+                    label,
+                    message_id,
+                    reason,
+                )
+                return message_id
+
+            # Only recreate when Telegram says the message is gone
+            if reason == self.telegram_client.REASON_NOT_FOUND:
+                self.logger.warning(
+                    "Could not edit %s message id=%s (gone); creating a replacement",
+                    label,
+                    message_id,
+                )
+            else:
+                self.logger.warning(
+                    "Could not edit %s message id=%s (reason=%s); creating a replacement",
+                    label,
+                    message_id,
+                    reason,
+                )
 
         new_id = self.telegram_client.send_message(text)
         if new_id:
             self.logger.info(
                 "Created new %s message (message_id: %s)", label, new_id
             )
-        return new_id
+            return new_id
+
+        # Send failed — keep previous id if any so next cycle can retry edit
+        return message_id
 
     def send_regular_update(
         self,
@@ -400,28 +427,16 @@ class AlertService:
         """
         Send or edit regular status update via Telegram.
 
-        Creates a formatted status message with current prices, spreads,
-        and price changes. Edits the previous message if it exists,
-        otherwise sends a new message. If a previously known message was
-        deleted (or process restarted with a stale ID), falls back to
-        sending a fresh message and stores the new ID.
-
-        Args:
-            buy_price: Current best buy price
-            sell_price: Current best sell price
-            changes: Dictionary of price changes over time periods
-            best_buy_offer: Full details of best buy offer
-            best_sell_offer: Full details of best sell offer
-            bcv_rate: Optional primary BCV rate (legacy)
-            bcv_rates: Optional BCVRates (dynamic currency map)
+        Prefers editing the saved status message. Creates a new one only when
+        there is no saved id, or Telegram reports the message is gone.
+        Network timeouts no longer spawn duplicate status bubbles.
 
         Returns:
-            Message ID of sent/edited message, or None if failed/disabled
+            Message ID of the tracked status message, or None if disabled
         """
         if self.telegram_client is None:
             return None
 
-        # Format the status message
         message = self.formatter.format_regular_update(
             buy_price=buy_price,
             sell_price=sell_price,
@@ -432,36 +447,11 @@ class AlertService:
             bcv_rates=bcv_rates,
         )
 
-        # Prefer editing the known status message (survives restarts via state file)
-        if self.last_telegram_message_id:
-            success, reason = self.telegram_client.edit_message_detailed(
-                self.last_telegram_message_id,
-                message
-            )
-            if success:
-                # Keep ID persisted even if content was unchanged
-                self._persist_state()
-                return self.last_telegram_message_id
-
-            self.logger.warning(
-                "Could not edit status message id=%s (reason=%s); sending a new one",
-                self.last_telegram_message_id,
-                reason,
-            )
-            # Stale / deleted / uneditable → clear and recreate below
-            self.last_telegram_message_id = None
-
-        # No known message, or edit failed → create a new status message
-        message_id = self.telegram_client.send_message(message)
-        if message_id:
-            self.last_telegram_message_id = message_id
-            self._persist_state()
-            self.logger.info(
-                "Created new Telegram status message (message_id: %s)",
-                message_id,
-            )
-        else:
-            # Persist cleared ID if previous edit failed and send also failed
-            self._persist_state()
-
-        return message_id
+        new_id = self._upsert_telegram_message(
+            message_id=self.last_telegram_message_id,
+            text=message,
+            label="status",
+        )
+        self.last_telegram_message_id = new_id
+        self._persist_state()
+        return new_id
